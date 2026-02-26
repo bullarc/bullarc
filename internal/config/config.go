@@ -30,7 +30,7 @@ type EngineConfig struct {
 type DataSourcesConfig struct {
 	Default string                 `json:"default" yaml:"default"`
 	Alpaca  AlpacaDataSourceConfig `json:"alpaca" yaml:"alpaca"`
-	Polygon DataSourceConfig       `json:"polygon" yaml:"polygon"`
+	Massive DataSourceConfig       `json:"massive" yaml:"massive"`
 	Yahoo   DataSourceConfig       `json:"yahoo" yaml:"yahoo"`
 }
 

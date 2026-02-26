@@ -60,6 +60,16 @@ func buildEngine(cfgPath, csvPath string) (*engine.Engine, error) {
 				datasource.WithBaseURL(cfg.DataSources.Alpaca.BaseURL),
 			))
 		}
+		if cfg.DataSources.Massive.Enabled {
+			var opts []datasource.MassiveOption
+			if cfg.DataSources.Massive.BaseURL != "" {
+				opts = append(opts, datasource.WithMassiveBaseURL(cfg.DataSources.Massive.BaseURL))
+			}
+			e.RegisterDataSource(datasource.NewMassiveSource(
+				cfg.DataSources.Massive.APIKey,
+				opts...,
+			))
+		}
 	} else {
 		e = engine.New()
 		for _, ind := range engine.DefaultIndicators() {
