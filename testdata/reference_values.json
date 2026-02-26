@@ -1,0 +1,35 @@
+{
+  "description": "Reference indicator values computed for verification",
+  "source_file": "ohlcv_100.csv",
+  "sma_14": {
+    "row_13": 156.017857,
+    "row_49": 178.466429,
+    "row_99": 185.887143
+  },
+  "sma_50": {
+    "row_49": 169.3158,
+    "row_99": 186.1164
+  },
+  "ema_14": {
+    "row_13": 156.017857,
+    "row_49": 179.229788,
+    "row_99": 186.861824
+  },
+  "rsi_14": {
+    "row_14": 76.302798,
+    "row_49": 60.153744,
+    "row_99": 52.042801
+  },
+  "macd": {
+    "row_33": {
+      "macd": 6.841839,
+      "signal": 6.841882,
+      "histogram": -4.2e-05
+    },
+    "row_99": {
+      "macd": 1.646379,
+      "signal": 0.982558,
+      "histogram": 0.663821
+    }
+  }
+}
