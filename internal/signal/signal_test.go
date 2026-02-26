@@ -72,12 +72,12 @@ func TestRSIGenerator(t *testing.T) {
 		wantType    bullarc.SignalType
 		wantMinConf float64
 	}{
-		{"deeply oversold (<20)", 15, bullarc.SignalBuy, 0.80},
-		{"oversold (<30)", 25, bullarc.SignalBuy, 0.60},
-		{"neutral low", 40, bullarc.SignalHold, 0.45},
-		{"neutral high", 60, bullarc.SignalHold, 0.45},
-		{"overbought (>70)", 75, bullarc.SignalSell, 0.60},
-		{"deeply overbought (>80)", 85, bullarc.SignalSell, 0.80},
+		{"deeply oversold (<20)", 15, bullarc.SignalBuy, 80},
+		{"oversold (<30)", 25, bullarc.SignalBuy, 60},
+		{"neutral low", 40, bullarc.SignalHold, 45},
+		{"neutral high", 60, bullarc.SignalHold, 45},
+		{"overbought (>70)", 75, bullarc.SignalSell, 60},
+		{"deeply overbought (>80)", 85, bullarc.SignalSell, 80},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -329,46 +329,46 @@ func TestAggregate_EmptySignals(t *testing.T) {
 // TestAggregate_AllBuy verifies that unanimous BUY signals produce a BUY composite.
 func TestAggregate_AllBuy(t *testing.T) {
 	signals := []bullarc.Signal{
-		{Type: bullarc.SignalBuy, Confidence: 0.8, Indicator: "RSI_14", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalBuy, Confidence: 0.7, Indicator: "MACD", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalBuy, Confidence: 0.75, Indicator: "BB", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalBuy, Confidence: 80, Indicator: "RSI_14", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalBuy, Confidence: 70, Indicator: "MACD", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalBuy, Confidence: 75, Indicator: "BB", Symbol: testSymbol, Timestamp: testBar.Time},
 	}
 	sig := signal.Aggregate(testSymbol, signals)
 	assert.Equal(t, bullarc.SignalBuy, sig.Type)
 	assert.Equal(t, "composite", sig.Indicator)
-	assert.InDelta(t, 1.0, sig.Confidence, 0.001)
+	assert.InDelta(t, 100.0, sig.Confidence, 0.01)
 }
 
 // TestAggregate_AllSell verifies that unanimous SELL signals produce a SELL composite.
 func TestAggregate_AllSell(t *testing.T) {
 	signals := []bullarc.Signal{
-		{Type: bullarc.SignalSell, Confidence: 0.8, Indicator: "RSI_14", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalSell, Confidence: 0.65, Indicator: "MACD", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalSell, Confidence: 80, Indicator: "RSI_14", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalSell, Confidence: 65, Indicator: "MACD", Symbol: testSymbol, Timestamp: testBar.Time},
 	}
 	sig := signal.Aggregate(testSymbol, signals)
 	assert.Equal(t, bullarc.SignalSell, sig.Type)
-	assert.InDelta(t, 1.0, sig.Confidence, 0.001)
+	assert.InDelta(t, 100.0, sig.Confidence, 0.01)
 }
 
 // TestAggregate_MajorityWins verifies that the type with higher total confidence wins.
 func TestAggregate_MajorityWins(t *testing.T) {
 	signals := []bullarc.Signal{
-		{Type: bullarc.SignalBuy, Confidence: 0.8, Indicator: "A", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalBuy, Confidence: 0.7, Indicator: "B", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalSell, Confidence: 0.6, Indicator: "C", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalBuy, Confidence: 80, Indicator: "A", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalBuy, Confidence: 70, Indicator: "B", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalSell, Confidence: 60, Indicator: "C", Symbol: testSymbol, Timestamp: testBar.Time},
 	}
 	sig := signal.Aggregate(testSymbol, signals)
 	assert.Equal(t, bullarc.SignalBuy, sig.Type)
-	// BUY score = 1.5, SELL score = 0.6, total = 2.1 → confidence ≈ 0.714
-	assert.InDelta(t, 1.5/2.1, sig.Confidence, 0.01)
+	// BUY score = 150, SELL score = 60, total = 210 → confidence ≈ 71.4
+	assert.InDelta(t, 150.0/210.0*100, sig.Confidence, 0.1)
 }
 
 // TestAggregate_ExplanationFormat verifies the explanation contains vote counts.
 func TestAggregate_ExplanationFormat(t *testing.T) {
 	signals := []bullarc.Signal{
-		{Type: bullarc.SignalBuy, Confidence: 0.8, Indicator: "A", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalSell, Confidence: 0.6, Indicator: "B", Symbol: testSymbol, Timestamp: testBar.Time},
-		{Type: bullarc.SignalHold, Confidence: 0.5, Indicator: "C", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalBuy, Confidence: 80, Indicator: "A", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalSell, Confidence: 60, Indicator: "B", Symbol: testSymbol, Timestamp: testBar.Time},
+		{Type: bullarc.SignalHold, Confidence: 50, Indicator: "C", Symbol: testSymbol, Timestamp: testBar.Time},
 	}
 	sig := signal.Aggregate(testSymbol, signals)
 	assert.Contains(t, sig.Explanation, "1 buy")

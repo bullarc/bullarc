@@ -14,7 +14,7 @@ func Aggregate(symbol string, signals []bullarc.Signal) bullarc.Signal {
 	if len(signals) == 0 {
 		return bullarc.Signal{
 			Type:        bullarc.SignalHold,
-			Confidence:  0.5,
+			Confidence:  50,
 			Indicator:   "composite",
 			Symbol:      symbol,
 			Timestamp:   time.Now(),
@@ -41,9 +41,9 @@ func Aggregate(symbol string, signals []bullarc.Signal) bullarc.Signal {
 	winner := winningType(scores)
 
 	totalScore := scores[bullarc.SignalBuy] + scores[bullarc.SignalSell] + scores[bullarc.SignalHold]
-	confidence := 0.5
+	confidence := 50.0
 	if totalScore > 0 {
-		confidence = scores[winner] / totalScore
+		confidence = scores[winner] / totalScore * 100
 	}
 
 	explanation := fmt.Sprintf(
@@ -52,7 +52,7 @@ func Aggregate(symbol string, signals []bullarc.Signal) bullarc.Signal {
 		counts[bullarc.SignalBuy],
 		counts[bullarc.SignalSell],
 		counts[bullarc.SignalHold],
-		confidence*100,
+		confidence,
 	)
 
 	return bullarc.Signal{

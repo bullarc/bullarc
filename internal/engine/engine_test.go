@@ -92,7 +92,7 @@ func TestAnalyze_CompositeTypeIsValid(t *testing.T) {
 	assert.True(t, valid, "composite type %q must be BUY, SELL, or HOLD", composite.Type)
 }
 
-// TestAnalyze_ConfidenceInRange verifies all signal confidence values are within [0, 1].
+// TestAnalyze_ConfidenceInRange verifies all signal confidence values are within [0, 100].
 func TestAnalyze_ConfidenceInRange(t *testing.T) {
 	bars := trendingBars(100, 100, 0.5)
 	e := newEngineWithBars(bars)
@@ -102,7 +102,7 @@ func TestAnalyze_ConfidenceInRange(t *testing.T) {
 
 	for _, sig := range result.Signals {
 		assert.GreaterOrEqual(t, sig.Confidence, 0.0, "signal %q confidence must be >= 0", sig.Indicator)
-		assert.LessOrEqual(t, sig.Confidence, 1.0, "signal %q confidence must be <= 1", sig.Indicator)
+		assert.LessOrEqual(t, sig.Confidence, 100.0, "signal %q confidence must be <= 100", sig.Indicator)
 	}
 }
 
@@ -182,6 +182,38 @@ func TestAnalyze_SymbolPropagated(t *testing.T) {
 	for _, sig := range result.Signals {
 		assert.Equal(t, "TSLA", sig.Symbol, "signal from %q should carry the request symbol", sig.Indicator)
 	}
+}
+
+// TestFilteredIndicators_EmptyReturnsAll verifies that an empty enabled list returns all defaults.
+func TestFilteredIndicators_EmptyReturnsAll(t *testing.T) {
+	all := engine.DefaultIndicators()
+	filtered := engine.FilteredIndicators(nil)
+	assert.Equal(t, len(all), len(filtered))
+}
+
+// TestFilteredIndicators_Subset verifies that a non-empty enabled list filters correctly.
+func TestFilteredIndicators_Subset(t *testing.T) {
+	enabled := []string{"RSI_14", "MACD_12_26_9"}
+	filtered := engine.FilteredIndicators(enabled)
+	require.Len(t, filtered, 2)
+	names := make([]string, len(filtered))
+	for i, ind := range filtered {
+		names[i] = ind.Meta().Name
+	}
+	assert.ElementsMatch(t, enabled, names)
+}
+
+// TestFilteredIndicators_UnknownNamesIgnored verifies that unknown names produce no entry.
+func TestFilteredIndicators_UnknownNamesIgnored(t *testing.T) {
+	filtered := engine.FilteredIndicators([]string{"RSI_14", "NONEXISTENT"})
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "RSI_14", filtered[0].Meta().Name)
+}
+
+// TestFilteredIndicators_AllUnknownReturnsEmpty verifies all-unknown names yield empty slice.
+func TestFilteredIndicators_AllUnknownReturnsEmpty(t *testing.T) {
+	filtered := engine.FilteredIndicators([]string{"NONEXISTENT"})
+	assert.Empty(t, filtered)
 }
 
 // TestSmoke_FullPipelineWithCSV is an end-to-end smoke test using the reference CSV dataset.

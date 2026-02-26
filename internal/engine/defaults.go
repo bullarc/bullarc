@@ -32,3 +32,23 @@ func DefaultIndicators() []bullarc.Indicator {
 		indicator.NewOBV(),
 	}
 }
+
+// FilteredIndicators returns the subset of default indicators whose names appear
+// in enabled. If enabled is empty, all default indicators are returned.
+func FilteredIndicators(enabled []string) []bullarc.Indicator {
+	all := DefaultIndicators()
+	if len(enabled) == 0 {
+		return all
+	}
+	set := make(map[string]struct{}, len(enabled))
+	for _, name := range enabled {
+		set[name] = struct{}{}
+	}
+	var out []bullarc.Indicator
+	for _, ind := range all {
+		if _, ok := set[ind.Meta().Name]; ok {
+			out = append(out, ind)
+		}
+	}
+	return out
+}

@@ -33,19 +33,19 @@ func rsiGenerator(name, symbol string, bar bullarc.OHLCV, values []bullarc.Indic
 	rsi := v.Value
 	switch {
 	case rsi < 20:
-		return newSignal(bullarc.SignalBuy, 0.85, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 85, name, symbol, bar,
 			fmt.Sprintf("RSI %.1f: deeply oversold", rsi)), true
 	case rsi < 30:
-		return newSignal(bullarc.SignalBuy, 0.65, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 65, name, symbol, bar,
 			fmt.Sprintf("RSI %.1f: oversold", rsi)), true
 	case rsi > 80:
-		return newSignal(bullarc.SignalSell, 0.85, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 85, name, symbol, bar,
 			fmt.Sprintf("RSI %.1f: deeply overbought", rsi)), true
 	case rsi > 70:
-		return newSignal(bullarc.SignalSell, 0.65, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 65, name, symbol, bar,
 			fmt.Sprintf("RSI %.1f: overbought", rsi)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			fmt.Sprintf("RSI %.1f: neutral", rsi)), true
 	}
 }
@@ -62,13 +62,13 @@ func macdGenerator(name, symbol string, bar bullarc.OHLCV, values []bullarc.Indi
 	}
 	switch {
 	case hist > 0:
-		return newSignal(bullarc.SignalBuy, 0.65, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 65, name, symbol, bar,
 			fmt.Sprintf("MACD histogram %.4f: bullish momentum", hist)), true
 	case hist < 0:
-		return newSignal(bullarc.SignalSell, 0.65, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 65, name, symbol, bar,
 			fmt.Sprintf("MACD histogram %.4f: bearish momentum", hist)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			"MACD histogram zero: neutral"), true
 	}
 }
@@ -87,13 +87,13 @@ func bbGenerator(name, symbol string, bar bullarc.OHLCV, values []bullarc.Indica
 	price := bar.Close
 	switch {
 	case price < lower:
-		return newSignal(bullarc.SignalBuy, 0.70, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 70, name, symbol, bar,
 			fmt.Sprintf("price %.2f below lower band %.2f", price, lower)), true
 	case price > upper:
-		return newSignal(bullarc.SignalSell, 0.70, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 70, name, symbol, bar,
 			fmt.Sprintf("price %.2f above upper band %.2f", price, upper)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			"price within Bollinger Bands"), true
 	}
 }
@@ -112,13 +112,13 @@ func smaCrossGenerator(name, symbol string, bar bullarc.OHLCV, values []bullarc.
 	deviation := (price - sma) / sma
 	switch {
 	case deviation > 0.02:
-		return newSignal(bullarc.SignalBuy, 0.55, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 55, name, symbol, bar,
 			fmt.Sprintf("price %.2f above %s %.2f (+%.1f%%)", price, name, sma, deviation*100)), true
 	case deviation < -0.02:
-		return newSignal(bullarc.SignalSell, 0.55, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 55, name, symbol, bar,
 			fmt.Sprintf("price %.2f below %s %.2f (%.1f%%)", price, name, sma, deviation*100)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			fmt.Sprintf("price near %s (%.2f vs %.2f)", name, price, sma)), true
 	}
 }
@@ -140,13 +140,13 @@ func supertrendGenerator(name, symbol string, bar bullarc.OHLCV, values []bullar
 	}
 	switch {
 	case dir > 0:
-		return newSignal(bullarc.SignalBuy, 0.75, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 75, name, symbol, bar,
 			"SuperTrend: bullish trend"), true
 	case dir < 0:
-		return newSignal(bullarc.SignalSell, 0.75, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 75, name, symbol, bar,
 			"SuperTrend: bearish trend"), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			"SuperTrend: no trend"), true
 	}
 }
@@ -160,13 +160,13 @@ func stochasticGenerator(name, symbol string, bar bullarc.OHLCV, values []bullar
 	k := v.Value
 	switch {
 	case k < 20:
-		return newSignal(bullarc.SignalBuy, 0.65, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 65, name, symbol, bar,
 			fmt.Sprintf("Stochastic K=%.1f: oversold", k)), true
 	case k > 80:
-		return newSignal(bullarc.SignalSell, 0.65, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 65, name, symbol, bar,
 			fmt.Sprintf("Stochastic K=%.1f: overbought", k)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			fmt.Sprintf("Stochastic K=%.1f: neutral", k)), true
 	}
 }
@@ -181,13 +181,13 @@ func vwapGenerator(name, symbol string, bar bullarc.OHLCV, values []bullarc.Indi
 	price := bar.Close
 	switch {
 	case price > vwap:
-		return newSignal(bullarc.SignalBuy, 0.55, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 55, name, symbol, bar,
 			fmt.Sprintf("price %.2f above VWAP %.2f", price, vwap)), true
 	case price < vwap:
-		return newSignal(bullarc.SignalSell, 0.55, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 55, name, symbol, bar,
 			fmt.Sprintf("price %.2f below VWAP %.2f", price, vwap)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			"price at VWAP"), true
 	}
 }
@@ -203,13 +203,13 @@ func obvGenerator(name, symbol string, bar bullarc.OHLCV, values []bullarc.Indic
 	last := recent[len(recent)-1].Value
 	switch {
 	case last > first:
-		return newSignal(bullarc.SignalBuy, 0.60, name, symbol, bar,
+		return newSignal(bullarc.SignalBuy, 60, name, symbol, bar,
 			fmt.Sprintf("OBV rising (%.0f → %.0f)", first, last)), true
 	case last < first:
-		return newSignal(bullarc.SignalSell, 0.60, name, symbol, bar,
+		return newSignal(bullarc.SignalSell, 60, name, symbol, bar,
 			fmt.Sprintf("OBV falling (%.0f → %.0f)", first, last)), true
 	default:
-		return newSignal(bullarc.SignalHold, 0.5, name, symbol, bar,
+		return newSignal(bullarc.SignalHold, 50, name, symbol, bar,
 			"OBV flat"), true
 	}
 }
