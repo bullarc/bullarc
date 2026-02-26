@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bullarcdev/bullarc"
+	"github.com/bullarcdev/bullarc/internal/signal"
 )
 
 // Engine orchestrates analysis by coordinating indicators, data sources,
@@ -15,12 +16,18 @@ type Engine struct {
 	indicators  map[string]bullarc.Indicator
 	dataSources []bullarc.DataSource
 	llmProvider bullarc.LLMProvider
+	// lookback is the number of calendar days of history to request per analysis.
+	lookback int
+	// interval is the default bar interval passed to the data source.
+	interval string
 }
 
 // New creates a new Engine with default configuration.
 func New() *Engine {
 	return &Engine{
 		indicators: make(map[string]bullarc.Indicator),
+		lookback:   200,
+		interval:   "1Day",
 	}
 }
 
@@ -39,7 +46,8 @@ func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 	e.llmProvider = llm
 }
 
-// Analyze performs analysis for the given request.
+// Analyze fetches market data, computes indicators, generates per-indicator signals,
+// and aggregates them into a composite BUY/SELL/HOLD signal.
 func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
 	slog.Info("analysis started",
 		"symbol", req.Symbol,
@@ -47,13 +55,88 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		"use_llm", req.UseLLM)
 
 	result := bullarc.AnalysisResult{
-		Symbol:    req.Symbol,
-		Timestamp: time.Now(),
+		Symbol:          req.Symbol,
+		Timestamp:       time.Now(),
+		IndicatorValues: make(map[string][]bullarc.IndicatorValue),
 	}
+
+	bars, err := e.fetchBars(ctx, req.Symbol)
+	if err != nil {
+		return result, err
+	}
+	if len(bars) == 0 {
+		slog.Warn("no bars available, skipping analysis", "symbol", req.Symbol)
+		return result, nil
+	}
+
+	indicators := e.selectIndicators(req.Indicators)
+	latestBar := bars[len(bars)-1]
+	var indSignals []bullarc.Signal
+
+	for _, ind := range indicators {
+		name := ind.Meta().Name
+		values, err := ind.Compute(bars)
+		if err != nil {
+			slog.Warn("indicator compute failed", "indicator", name, "err", err)
+			continue
+		}
+		result.IndicatorValues[name] = values
+
+		gen := signal.ForIndicator(name)
+		if gen == nil {
+			continue
+		}
+		sig, ok := gen(name, req.Symbol, latestBar, values)
+		if ok {
+			indSignals = append(indSignals, sig)
+		}
+	}
+
+	composite := signal.Aggregate(req.Symbol, indSignals)
+	result.Signals = append([]bullarc.Signal{composite}, indSignals...)
 
 	slog.Info("analysis complete",
 		"symbol", req.Symbol,
-		"signals", len(result.Signals))
+		"composite", composite.Type,
+		"confidence", composite.Confidence,
+		"signals", len(indSignals))
 
 	return result, nil
+}
+
+func (e *Engine) fetchBars(ctx context.Context, symbol string) ([]bullarc.OHLCV, error) {
+	if len(e.dataSources) == 0 {
+		return nil, nil
+	}
+	end := time.Now()
+	start := end.AddDate(0, 0, -e.lookback)
+	q := bullarc.DataQuery{
+		Symbol:   symbol,
+		Start:    start,
+		End:      end,
+		Interval: e.interval,
+	}
+	bars, err := e.dataSources[0].Fetch(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("fetched bars", "symbol", symbol, "count", len(bars))
+	return bars, nil
+}
+
+func (e *Engine) selectIndicators(names []string) []bullarc.Indicator {
+	if len(names) == 0 {
+		inds := make([]bullarc.Indicator, 0, len(e.indicators))
+		for _, ind := range e.indicators {
+			inds = append(inds, ind)
+		}
+		return inds
+	}
+	var selected []bullarc.Indicator
+	for _, name := range names {
+		if ind, ok := e.indicators[name]; ok {
+			selected = append(selected, ind)
+		}
+	}
+	return selected
 }
