@@ -23,6 +23,7 @@ vendor/
 # Environment
 .env
 .env.*
+config.yaml
 
 # IDE
 .idea/
