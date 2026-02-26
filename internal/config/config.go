@@ -21,9 +21,18 @@ type EngineConfig struct {
 
 // DataSourcesConfig configures data source providers.
 type DataSourcesConfig struct {
-	Default string           `json:"default" yaml:"default"`
-	Polygon DataSourceConfig `json:"polygon" yaml:"polygon"`
-	Yahoo   DataSourceConfig `json:"yahoo" yaml:"yahoo"`
+	Default string                 `json:"default" yaml:"default"`
+	Alpaca  AlpacaDataSourceConfig `json:"alpaca" yaml:"alpaca"`
+	Polygon DataSourceConfig       `json:"polygon" yaml:"polygon"`
+	Yahoo   DataSourceConfig       `json:"yahoo" yaml:"yahoo"`
+}
+
+// AlpacaDataSourceConfig configures the Alpaca Markets data source.
+type AlpacaDataSourceConfig struct {
+	Enabled   bool   `json:"enabled" yaml:"enabled"`
+	KeyID     string `json:"key_id" yaml:"key_id"`
+	SecretKey string `json:"secret_key" yaml:"secret_key"`
+	BaseURL   string `json:"base_url" yaml:"base_url"`
 }
 
 // DataSourceConfig configures a single data source.

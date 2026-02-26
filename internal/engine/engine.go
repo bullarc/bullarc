@@ -3,6 +3,7 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/bullarcdev/bullarc"
@@ -39,11 +40,20 @@ func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 }
 
 // Analyze performs analysis for the given request.
-func (e *Engine) Analyze(_ context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+	slog.Info("analysis started",
+		"symbol", req.Symbol,
+		"indicators", req.Indicators,
+		"use_llm", req.UseLLM)
+
 	result := bullarc.AnalysisResult{
 		Symbol:    req.Symbol,
 		Timestamp: time.Now(),
 	}
+
+	slog.Info("analysis complete",
+		"symbol", req.Symbol,
+		"signals", len(result.Signals))
 
 	return result, nil
 }
