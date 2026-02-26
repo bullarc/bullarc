@@ -1,6 +1,12 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Config is the top-level application configuration.
 type Config struct {
@@ -9,6 +15,7 @@ type Config struct {
 	Indicators  IndicatorsConfig  `json:"indicators" yaml:"indicators"`
 	LLM         LLMConfig         `json:"llm" yaml:"llm"`
 	MCP         MCPConfig         `json:"mcp" yaml:"mcp"`
+	Webhooks    WebhookConfig     `json:"webhooks" yaml:"webhooks"`
 }
 
 // EngineConfig configures the analysis engine.
@@ -61,4 +68,24 @@ type LLMConfig struct {
 type MCPConfig struct {
 	Enabled bool   `json:"enabled" yaml:"enabled"`
 	Address string `json:"address" yaml:"address"`
+}
+
+// WebhookConfig configures outbound webhook delivery for signals.
+type WebhookConfig struct {
+	Enabled bool          `json:"enabled" yaml:"enabled"`
+	URLs    []string      `json:"urls" yaml:"urls"`
+	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+}
+
+// Load reads a YAML (or JSON) config file at path and returns the parsed Config.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("config: parse %s: %w", path, err)
+	}
+	return &cfg, nil
 }

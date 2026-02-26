@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bullarcdev/bullarc"
+	"github.com/bullarcdev/bullarc/internal/config"
 	"github.com/bullarcdev/bullarc/internal/signal"
 )
 
@@ -29,6 +30,24 @@ func New() *Engine {
 		lookback:   200,
 		interval:   "1Day",
 	}
+}
+
+// NewWithConfig creates an Engine pre-configured from cfg.
+// Lookback and interval are set from EngineConfig if non-zero/non-empty.
+// Indicators are built from IndicatorsConfig (empty Enabled = all defaults).
+// Data sources and LLM providers must still be registered separately.
+func NewWithConfig(cfg *config.Config) *Engine {
+	e := New()
+	if cfg.Engine.MaxBars > 0 {
+		e.lookback = cfg.Engine.MaxBars
+	}
+	if cfg.Engine.DefaultInterval != "" {
+		e.interval = cfg.Engine.DefaultInterval
+	}
+	for _, ind := range IndicatorsFromConfig(cfg.Indicators) {
+		e.RegisterIndicator(ind)
+	}
+	return e
 }
 
 // RegisterIndicator adds an indicator to the engine.

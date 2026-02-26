@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/bullarcdev/bullarc"
+	"github.com/bullarcdev/bullarc/internal/config"
 	"github.com/bullarcdev/bullarc/internal/engine"
 	"github.com/bullarcdev/bullarc/testutil"
 	"github.com/stretchr/testify/assert"
@@ -214,6 +215,80 @@ func TestFilteredIndicators_UnknownNamesIgnored(t *testing.T) {
 func TestFilteredIndicators_AllUnknownReturnsEmpty(t *testing.T) {
 	filtered := engine.FilteredIndicators([]string{"NONEXISTENT"})
 	assert.Empty(t, filtered)
+}
+
+// TestIndicatorsFromConfig_EmptyReturnsAll verifies that an empty enabled list yields all defaults.
+func TestIndicatorsFromConfig_EmptyReturnsAll(t *testing.T) {
+	inds := engine.IndicatorsFromConfig(config.IndicatorsConfig{})
+	assert.Equal(t, len(engine.DefaultIndicators()), len(inds))
+}
+
+// TestIndicatorsFromConfig_ExactNameMatch verifies default-name entries are resolved to defaults.
+func TestIndicatorsFromConfig_ExactNameMatch(t *testing.T) {
+	cfg := config.IndicatorsConfig{Enabled: []string{"RSI_14", "MACD_12_26_9"}}
+	inds := engine.IndicatorsFromConfig(cfg)
+	require.Len(t, inds, 2)
+	names := []string{inds[0].Meta().Name, inds[1].Meta().Name}
+	assert.ElementsMatch(t, []string{"RSI_14", "MACD_12_26_9"}, names)
+}
+
+// TestIndicatorsFromConfig_CustomPeriod verifies that a non-default name like "RSI_21" is built.
+func TestIndicatorsFromConfig_CustomPeriod(t *testing.T) {
+	cfg := config.IndicatorsConfig{Enabled: []string{"RSI_21", "SMA_30", "EMA_9"}}
+	inds := engine.IndicatorsFromConfig(cfg)
+	require.Len(t, inds, 3)
+	names := make([]string, len(inds))
+	for i, ind := range inds {
+		names[i] = ind.Meta().Name
+	}
+	assert.ElementsMatch(t, []string{"RSI_21", "SMA_30", "EMA_9"}, names)
+}
+
+// TestIndicatorsFromConfig_CustomMACD verifies MACD with non-default params.
+func TestIndicatorsFromConfig_CustomMACD(t *testing.T) {
+	cfg := config.IndicatorsConfig{Enabled: []string{"MACD_10_22_9"}}
+	inds := engine.IndicatorsFromConfig(cfg)
+	require.Len(t, inds, 1)
+	assert.Equal(t, "MACD_10_22_9", inds[0].Meta().Name)
+}
+
+// TestIndicatorsFromConfig_CustomBB verifies BollingerBands with non-default params.
+func TestIndicatorsFromConfig_CustomBB(t *testing.T) {
+	cfg := config.IndicatorsConfig{Enabled: []string{"BB_14_1.5"}}
+	inds := engine.IndicatorsFromConfig(cfg)
+	require.Len(t, inds, 1)
+	assert.Equal(t, "BB_14_1.5", inds[0].Meta().Name)
+}
+
+// TestIndicatorsFromConfig_UnknownSkipped verifies unrecognised names are skipped.
+func TestIndicatorsFromConfig_UnknownSkipped(t *testing.T) {
+	cfg := config.IndicatorsConfig{Enabled: []string{"RSI_14", "UNKNOWN_THING"}}
+	inds := engine.IndicatorsFromConfig(cfg)
+	require.Len(t, inds, 1)
+	assert.Equal(t, "RSI_14", inds[0].Meta().Name)
+}
+
+// TestNewWithConfig_SetsLookbackAndInterval verifies NewWithConfig applies EngineConfig settings.
+func TestNewWithConfig_SetsLookbackAndInterval(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			MaxBars:         500,
+			DefaultInterval: "1Hour",
+		},
+		Indicators: config.IndicatorsConfig{
+			Enabled: []string{"RSI_14", "VWAP"},
+		},
+	}
+	e := engine.NewWithConfig(cfg)
+
+	bars := trendingBars(100, 100, 0.5)
+	e.RegisterDataSource(&stubDataSource{bars: bars})
+
+	result, err := e.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err)
+	assert.Contains(t, result.IndicatorValues, "RSI_14")
+	assert.Contains(t, result.IndicatorValues, "VWAP")
+	assert.NotContains(t, result.IndicatorValues, "MACD_12_26_9")
 }
 
 // TestSmoke_FullPipelineWithCSV is an end-to-end smoke test using the reference CSV dataset.

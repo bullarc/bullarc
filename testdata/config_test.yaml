@@ -1,0 +1,15 @@
+engine:
+  default_interval: "1Hour"
+  max_bars: 300
+
+indicators:
+  enabled:
+    - RSI_14
+    - MACD_12_26_9
+    - VWAP
+
+webhooks:
+  enabled: true
+  urls:
+    - "http://localhost:9000/hook"
+  timeout: 5s
