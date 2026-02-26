@@ -2,11 +2,17 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/bullarcdev/bullarc"
 	"github.com/bullarcdev/bullarc/internal/config"
 	"github.com/bullarcdev/bullarc/internal/engine"
+	"github.com/bullarcdev/bullarc/internal/webhook"
 	"github.com/bullarcdev/bullarc/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -307,4 +313,75 @@ func TestSmoke_FullPipelineWithCSV(t *testing.T) {
 
 	// All default indicators should have produced values.
 	assert.NotEmpty(t, result.IndicatorValues)
+}
+
+// TestAnalyze_WebhookDispatched verifies that Analyze POSTs the result to a registered webhook.
+func TestAnalyze_WebhookDispatched(t *testing.T) {
+	var received []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received = body
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	bars := trendingBars(100, 100, 0.5)
+	e := newEngineWithBars(bars)
+	e.RegisterWebhookDispatcher(webhook.New([]string{srv.URL}, 5*time.Second))
+
+	result, err := e.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Signals)
+
+	require.NotNil(t, received, "webhook server should have received a POST")
+	var payload struct {
+		Symbol  string           `json:"symbol"`
+		Signals []bullarc.Signal `json:"signals"`
+	}
+	require.NoError(t, json.Unmarshal(received, &payload))
+	assert.Equal(t, "AAPL", payload.Symbol)
+	assert.NotEmpty(t, payload.Signals)
+}
+
+// TestAnalyze_WebhookFailureDoesNotAffectResult verifies that a failing webhook does not
+// cause Analyze to return an error.
+func TestAnalyze_WebhookFailureDoesNotAffectResult(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	bars := trendingBars(100, 100, 0.5)
+	e := newEngineWithBars(bars)
+	e.RegisterWebhookDispatcher(webhook.New([]string{srv.URL}, 5*time.Second))
+
+	result, err := e.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err, "webhook failure must not propagate to the caller")
+	assert.NotEmpty(t, result.Signals)
+}
+
+// TestNewWithConfig_WebhookDispatched verifies that NewWithConfig wires the dispatcher
+// automatically when webhooks are enabled in the config.
+func TestNewWithConfig_WebhookDispatched(t *testing.T) {
+	var received bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Webhooks: config.WebhookConfig{
+			Enabled: true,
+			URLs:    []string{srv.URL},
+			Timeout: 5 * time.Second,
+		},
+	}
+	e := engine.NewWithConfig(cfg)
+	bars := trendingBars(100, 100, 0.5)
+	e.RegisterDataSource(&stubDataSource{bars: bars})
+
+	_, err := e.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err)
+	assert.True(t, received, "webhook should have been called after analysis")
 }

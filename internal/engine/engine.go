@@ -9,14 +9,16 @@ import (
 	"github.com/bullarcdev/bullarc"
 	"github.com/bullarcdev/bullarc/internal/config"
 	"github.com/bullarcdev/bullarc/internal/signal"
+	"github.com/bullarcdev/bullarc/internal/webhook"
 )
 
 // Engine orchestrates analysis by coordinating indicators, data sources,
 // and LLM providers.
 type Engine struct {
-	indicators  map[string]bullarc.Indicator
-	dataSources []bullarc.DataSource
-	llmProvider bullarc.LLMProvider
+	indicators        map[string]bullarc.Indicator
+	dataSources       []bullarc.DataSource
+	llmProvider       bullarc.LLMProvider
+	webhookDispatcher *webhook.Dispatcher
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -47,6 +49,9 @@ func NewWithConfig(cfg *config.Config) *Engine {
 	for _, ind := range IndicatorsFromConfig(cfg.Indicators) {
 		e.RegisterIndicator(ind)
 	}
+	if cfg.Webhooks.Enabled && len(cfg.Webhooks.URLs) > 0 {
+		e.RegisterWebhookDispatcher(webhook.New(cfg.Webhooks.URLs, cfg.Webhooks.Timeout))
+	}
 	return e
 }
 
@@ -63,6 +68,13 @@ func (e *Engine) RegisterDataSource(ds bullarc.DataSource) {
 // RegisterLLMProvider sets the LLM provider for the engine.
 func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 	e.llmProvider = llm
+}
+
+// RegisterWebhookDispatcher attaches a webhook dispatcher that receives each
+// AnalysisResult immediately after Analyze completes. Dispatch errors are
+// logged but do not affect the returned result.
+func (e *Engine) RegisterWebhookDispatcher(d *webhook.Dispatcher) {
+	e.webhookDispatcher = d
 }
 
 // Analyze fetches market data, computes indicators, generates per-indicator signals,
@@ -119,6 +131,12 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		"composite", composite.Type,
 		"confidence", composite.Confidence,
 		"signals", len(indSignals))
+
+	if e.webhookDispatcher != nil {
+		if err := e.webhookDispatcher.Dispatch(ctx, result); err != nil {
+			slog.Warn("webhook dispatch failed", "symbol", req.Symbol, "err", err)
+		}
+	}
 
 	return result, nil
 }
