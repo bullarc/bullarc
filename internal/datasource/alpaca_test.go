@@ -163,6 +163,99 @@ func TestAlpacaSource_Fetch_ContextCancelled(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestIsCryptoSymbol(t *testing.T) {
+	assert.True(t, isCryptoSymbol("BTC/USD"))
+	assert.True(t, isCryptoSymbol("ETH/USD"))
+	assert.True(t, isCryptoSymbol("SOL/USD"))
+	assert.False(t, isCryptoSymbol("AAPL"))
+	assert.False(t, isCryptoSymbol("TSLA"))
+	assert.False(t, isCryptoSymbol(""))
+}
+
+func TestAlpacaSource_Fetch_ErrorResponseBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"message":"forbidden","code":40110000}`)
+	}))
+	defer srv.Close()
+
+	cfg := retryConfig{maxAttempts: 1, baseDelay: time.Millisecond, maxDelay: 5 * time.Millisecond}
+	src := NewAlpacaSource("bad-key", "bad-secret", WithBaseURL(srv.URL), WithRetry(cfg))
+	_, err := src.Fetch(context.Background(), bullarc.DataQuery{Symbol: "AAPL"})
+	require.Error(t, err)
+	requireCode(t, err, "DATA_SOURCE_UNAVAILABLE")
+	assert.Contains(t, err.Error(), "forbidden")
+}
+
+func TestAlpacaSource_Fetch_Crypto_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "test-key", r.Header.Get("APCA-API-KEY-ID"))
+		assert.Equal(t, "test-secret", r.Header.Get("APCA-API-SECRET-KEY"))
+		assert.Equal(t, "/v1beta3/crypto/us/bars", r.URL.Path)
+		assert.Equal(t, "BTC/USD", r.URL.Query().Get("symbols"))
+		assert.Equal(t, "1Day", r.URL.Query().Get("timeframe"))
+
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"bars": {
+				"BTC/USD": [
+					{"t":"2024-07-01T00:00:00Z","o":60000,"h":62000,"l":59000,"c":61000,"v":50.5},
+					{"t":"2024-07-02T00:00:00Z","o":61000,"h":63000,"l":60000,"c":62000,"v":45.2}
+				]
+			},
+			"next_page_token": null
+		}`)
+	}))
+	defer srv.Close()
+
+	src := NewAlpacaSource("test-key", "test-secret", WithBaseURL(srv.URL))
+	bars, err := src.Fetch(context.Background(), bullarc.DataQuery{Symbol: "BTC/USD"})
+	require.NoError(t, err)
+	require.Len(t, bars, 2)
+
+	assert.Equal(t, time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), bars[0].Time)
+	assert.Equal(t, float64(60000), bars[0].Open)
+	assert.Equal(t, float64(62000), bars[0].High)
+	assert.Equal(t, float64(59000), bars[0].Low)
+	assert.Equal(t, float64(61000), bars[0].Close)
+	assert.Equal(t, 50.5, bars[0].Volume)
+}
+
+func TestAlpacaSource_Fetch_Crypto_Pagination(t *testing.T) {
+	page := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		page++
+		if page == 1 {
+			token := "cryptopage2"
+			fmt.Fprintf(w, `{"bars":{"BTC/USD":[{"t":"2024-07-01T00:00:00Z","o":60000,"h":62000,"l":59000,"c":61000,"v":50}]},"next_page_token":"%s"}`, token)
+		} else {
+			assert.Equal(t, "cryptopage2", r.URL.Query().Get("page_token"))
+			fmt.Fprint(w, `{"bars":{"BTC/USD":[{"t":"2024-07-02T00:00:00Z","o":61000,"h":63000,"l":60000,"c":62000,"v":45}]},"next_page_token":null}`)
+		}
+	}))
+	defer srv.Close()
+
+	src := NewAlpacaSource("key", "secret", WithBaseURL(srv.URL))
+	bars, err := src.Fetch(context.Background(), bullarc.DataQuery{Symbol: "BTC/USD"})
+	require.NoError(t, err)
+	assert.Len(t, bars, 2)
+	assert.Equal(t, 2, page, "expected exactly 2 page requests")
+}
+
+func TestAlpacaSource_Fetch_Crypto_SymbolNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1beta3/crypto/us/bars", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	src := NewAlpacaSource("key", "secret", WithBaseURL(srv.URL))
+	_, err := src.Fetch(context.Background(), bullarc.DataQuery{Symbol: "FAKE/USD"})
+	require.Error(t, err)
+	requireCode(t, err, "SYMBOL_NOT_FOUND")
+}
+
 func TestAlpacaSource_Fetch_QueryParams(t *testing.T) {
 	start := time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2024, 7, 31, 0, 0, 0, 0, time.UTC)
