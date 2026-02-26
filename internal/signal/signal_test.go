@@ -67,9 +67,9 @@ func TestRSIGenerator(t *testing.T) {
 	require.NotNil(t, gen)
 
 	cases := []struct {
-		name       string
-		rsi        float64
-		wantType   bullarc.SignalType
+		name        string
+		rsi         float64
+		wantType    bullarc.SignalType
 		wantMinConf float64
 	}{
 		{"deeply oversold (<20)", 15, bullarc.SignalBuy, 0.80},
