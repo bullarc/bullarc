@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // Watch polls for new market data at pollInterval and calls onResult whenever

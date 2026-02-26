@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // CSVSource reads OHLCV bars from a local CSV file.

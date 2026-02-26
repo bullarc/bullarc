@@ -3,7 +3,7 @@ package signal
 import (
 	"strings"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // Generator produces a trading signal from indicator values and the latest bar.

@@ -3,7 +3,7 @@ package indicator
 import (
 	"fmt"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // OBV computes the On-Balance Volume.

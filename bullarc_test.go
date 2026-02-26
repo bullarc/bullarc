@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

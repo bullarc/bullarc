@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // Aggregate combines individual indicator signals into a single composite signal.

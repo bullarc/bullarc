@@ -3,7 +3,7 @@ package signal
 import (
 	"fmt"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 func newSignal(t bullarc.SignalType, conf float64, name, symbol string, bar bullarc.OHLCV, explanation string) bullarc.Signal {

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
-	"github.com/bullarcdev/bullarc/internal/config"
-	"github.com/bullarcdev/bullarc/internal/signal"
-	"github.com/bullarcdev/bullarc/internal/webhook"
+	"github.com/bullarc/bullarc"
+	"github.com/bullarc/bullarc/internal/config"
+	"github.com/bullarc/bullarc/internal/signal"
+	"github.com/bullarc/bullarc/internal/webhook"
 )
 
 // Engine orchestrates analysis by coordinating indicators, data sources,

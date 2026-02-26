@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 const alpacaDefaultBaseURL = "https://data.alpaca.markets"

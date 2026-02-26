@@ -3,7 +3,7 @@ package indicator
 import (
 	"fmt"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // VWAP computes the cumulative Volume Weighted Average Price.

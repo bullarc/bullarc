@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // jsonRecord is the on-disk representation of a single OHLCV bar in JSON files.

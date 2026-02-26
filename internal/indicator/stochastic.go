@@ -3,7 +3,7 @@ package indicator
 import (
 	"fmt"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // Stochastic computes the Slow Stochastic oscillator.

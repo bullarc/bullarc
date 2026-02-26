@@ -3,7 +3,7 @@ package indicator
 import (
 	"fmt"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // EMA computes the Exponential Moving Average over a configurable period.

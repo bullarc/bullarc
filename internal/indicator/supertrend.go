@@ -3,7 +3,7 @@ package indicator
 import (
 	"fmt"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // SuperTrend computes the SuperTrend indicator using ATR-based bands.

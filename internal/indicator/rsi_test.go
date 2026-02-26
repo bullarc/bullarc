@@ -3,7 +3,7 @@ package indicator
 import (
 	"testing"
 
-	"github.com/bullarcdev/bullarc/testutil"
+	"github.com/bullarc/bullarc/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

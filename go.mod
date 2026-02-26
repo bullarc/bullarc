@@ -1,4 +1,4 @@
-module github.com/bullarcdev/bullarc
+module github.com/bullarc/bullarc
 
 go 1.26
 

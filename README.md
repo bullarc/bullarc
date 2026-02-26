@@ -12,7 +12,7 @@ are in progress.
 ## Architecture
 
 The design follows a strict dependency rule: all shared types and interfaces live
-in the root package (`github.com/bullarcdev/bullarc`). Internal packages implement
+in the root package (`github.com/bullarc/bullarc`). Internal packages implement
 those interfaces but never import each other. Only `internal/engine` is permitted
 to import multiple internal packages, which is where they get wired together.
 

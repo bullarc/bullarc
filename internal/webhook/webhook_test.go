@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
-	"github.com/bullarcdev/bullarc/internal/webhook"
+	"github.com/bullarc/bullarc"
+	"github.com/bullarc/bullarc/internal/webhook"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

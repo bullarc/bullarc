@@ -4,7 +4,7 @@ package sdk
 import (
 	"context"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // Client is a high-level SDK client wrapping the bullarc engine.

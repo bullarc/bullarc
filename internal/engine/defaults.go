@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bullarcdev/bullarc"
-	"github.com/bullarcdev/bullarc/internal/config"
-	"github.com/bullarcdev/bullarc/internal/indicator"
+	"github.com/bullarc/bullarc"
+	"github.com/bullarc/bullarc/internal/config"
+	"github.com/bullarc/bullarc/internal/indicator"
 )
 
 // DefaultIndicators returns the built-in set of indicators used by the engine.

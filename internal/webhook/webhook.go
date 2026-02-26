@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // Dispatcher sends AnalysisResult payloads to a list of webhook URLs via HTTP POST.

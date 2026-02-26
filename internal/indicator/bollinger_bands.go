@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // BollingerBands computes the Bollinger Bands over a configurable period

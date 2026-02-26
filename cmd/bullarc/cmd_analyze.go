@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bullarcdev/bullarc"
-	"github.com/bullarcdev/bullarc/internal/config"
-	"github.com/bullarcdev/bullarc/internal/datasource"
-	"github.com/bullarcdev/bullarc/internal/engine"
+	"github.com/bullarc/bullarc"
+	"github.com/bullarc/bullarc/internal/config"
+	"github.com/bullarc/bullarc/internal/datasource"
+	"github.com/bullarc/bullarc/internal/engine"
 )
 
 var analyzeCmd = &cobra.Command{

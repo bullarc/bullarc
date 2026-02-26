@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // RSI computes the Relative Strength Index over a configurable period

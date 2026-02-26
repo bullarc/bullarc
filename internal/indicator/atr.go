@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/bullarcdev/bullarc"
+	"github.com/bullarc/bullarc"
 )
 
 // ATR computes the Average True Range over a configurable period

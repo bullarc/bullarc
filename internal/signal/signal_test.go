@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bullarcdev/bullarc"
-	"github.com/bullarcdev/bullarc/internal/signal"
+	"github.com/bullarc/bullarc"
+	"github.com/bullarc/bullarc/internal/signal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
