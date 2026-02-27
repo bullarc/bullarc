@@ -44,6 +44,7 @@ type Engine struct {
 	optionsSource           bullarc.OptionsSource
 	optionsFlowWeight       float64
 	optionsCfg              bullarc.OptionsConfig
+	riskConfig              RiskConfig
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -61,6 +62,7 @@ func New() *Engine {
 		llmMetaSignalWeight:     2.0,
 		socialConfidencePenalty: DefaultSocialConfidencePenalty,
 		optionsFlowWeight:       1.0,
+		riskConfig:              defaultRiskConfig(),
 	}
 }
 
@@ -184,6 +186,16 @@ func (e *Engine) SetOptionsConfig(cfg bullarc.OptionsConfig) {
 	e.optionsCfg = cfg
 }
 
+// SetRiskConfig updates the ATR-based position sizing and stop-loss configuration.
+// Calling this with Enabled=true activates risk metric computation for BUY/SELL
+// signals. The defaults (5% max position, 2x stop, 3x take-profit, ATR_14) are
+// applied automatically when the corresponding fields are zero.
+func (e *Engine) SetRiskConfig(cfg RiskConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.riskConfig = cfg
+}
+
 // SetNewsSentimentWeight sets the weight multiplier applied to the confidence
 // of the news sentiment signal before it participates in aggregation.
 // A value of 1.0 (the default) gives the news signal equal weight to one
@@ -282,6 +294,7 @@ type engineSnapshot struct {
 	optionsSource           bullarc.OptionsSource
 	optionsFlowWeight       float64
 	optionsCfg              bullarc.OptionsConfig
+	riskConfig              RiskConfig
 	lookback                int
 	interval                string
 }
@@ -305,6 +318,7 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 		optionsSource:           e.optionsSource,
 		optionsFlowWeight:       e.optionsFlowWeight,
 		optionsCfg:              e.optionsCfg,
+		riskConfig:              e.riskConfig,
 		lookback:                e.lookback,
 		interval:                e.interval,
 	}
@@ -419,6 +433,17 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		composite = e.applySocialRiskFlag(ctx, req.Symbol, composite, snap)
 	}
 	result.Signals = append([]bullarc.Signal{composite}, indSignals...)
+
+	if risk, ok := computeRiskMetrics(composite, latestBar.Close, result.IndicatorValues, snap.riskConfig); ok {
+		result.Risk = risk
+		slog.Info("risk metrics computed",
+			"symbol", req.Symbol,
+			"position_size_pct", risk.PositionSizePct,
+			"stop_loss", risk.StopLoss,
+			"take_profit", risk.TakeProfit,
+			"risk_reward", risk.RiskRewardRatio,
+			"atr", risk.ATR)
+	}
 
 	slog.Info("analysis complete",
 		"symbol", req.Symbol,
