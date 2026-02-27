@@ -280,6 +280,54 @@ type OptionsSource interface {
 	FetchOptionsActivity(ctx context.Context, symbol string, cfg OptionsConfig) ([]OptionsActivity, error)
 }
 
+// OrderSide represents the direction of a paper trade order.
+type OrderSide string
+
+const (
+	OrderSideBuy  OrderSide = "buy"
+	OrderSideSell OrderSide = "sell"
+)
+
+// Order represents a paper trade order to be submitted.
+type Order struct {
+	Symbol            string    `json:"symbol"`
+	Side              OrderSide `json:"side"`
+	Qty               float64   `json:"qty"`
+	SignalConfidence  float64   `json:"signal_confidence"`
+	SignalExplanation string    `json:"signal_explanation"`
+}
+
+// OrderResult holds the outcome of a placed paper trade order.
+type OrderResult struct {
+	OrderID     string    `json:"order_id"`
+	Symbol      string    `json:"symbol"`
+	Side        OrderSide `json:"side"`
+	Qty         float64   `json:"qty"`
+	FilledPrice float64   `json:"filled_price"`
+	FilledAt    time.Time `json:"filled_at"`
+	Status      string    `json:"status"`
+}
+
+// Position represents an open paper trading position with unrealized P&L.
+type Position struct {
+	Symbol           string    `json:"symbol"`
+	Qty              float64   `json:"qty"`
+	AvgEntryPrice    float64   `json:"avg_entry_price"`
+	CurrentPrice     float64   `json:"current_price"`
+	UnrealizedPnL    float64   `json:"unrealized_pl"`
+	UnrealizedPnLPct float64   `json:"unrealized_plpc"`
+}
+
+// PaperTrader manages simulated trades via the Alpaca paper trading API.
+// All methods are safe for concurrent use. All output is clearly labeled
+// as paper trading to prevent confusion with real trades.
+type PaperTrader interface {
+	PlaceOrder(ctx context.Context, order Order) (OrderResult, error)
+	GetPositions(ctx context.Context) ([]Position, error)
+	ClosePosition(ctx context.Context, symbol string) (OrderResult, error)
+	CloseAll(ctx context.Context) error
+}
+
 // Sentinel errors.
 var (
 	ErrInsufficientData      = &Error{Code: "INSUFFICIENT_DATA", Message: "not enough data bars for computation"}
