@@ -20,6 +20,11 @@ type dataSourceSetter interface {
 	SetDataSource(ds bullarc.DataSource)
 }
 
+// llmProviderSetter is satisfied by engines that support replacing their LLM provider.
+type llmProviderSetter interface {
+	SetLLMProvider(llm bullarc.LLMProvider)
+}
+
 // Client is a high-level SDK client wrapping the bullarc engine.
 type Client struct {
 	engine bullarc.Engine
@@ -53,10 +58,11 @@ func (c *Client) Configure(opts ...Option) error {
 
 	// Apply to a draft copy so we can roll back on error.
 	draft := ClientConfig{
-		Symbols:    cloneStrings(c.cfg.Symbols),
-		Indicators: cloneStrings(c.cfg.Indicators),
-		Interval:   c.cfg.Interval,
-		DataSource: c.cfg.DataSource,
+		Symbols:     cloneStrings(c.cfg.Symbols),
+		Indicators:  cloneStrings(c.cfg.Indicators),
+		Interval:    c.cfg.Interval,
+		DataSource:  c.cfg.DataSource,
+		LLMProvider: c.cfg.LLMProvider,
 	}
 	for _, opt := range opts {
 		if err := opt(&draft); err != nil {
@@ -73,10 +79,11 @@ func (c *Client) Config() ClientConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return ClientConfig{
-		Symbols:    cloneStrings(c.cfg.Symbols),
-		Indicators: cloneStrings(c.cfg.Indicators),
-		Interval:   c.cfg.Interval,
-		DataSource: c.cfg.DataSource,
+		Symbols:     cloneStrings(c.cfg.Symbols),
+		Indicators:  cloneStrings(c.cfg.Indicators),
+		Interval:    c.cfg.Interval,
+		DataSource:  c.cfg.DataSource,
+		LLMProvider: c.cfg.LLMProvider,
 	}
 }
 
@@ -206,6 +213,11 @@ func (c *Client) propagateConfig() {
 	if c.cfg.DataSource != nil {
 		if ds, ok := c.engine.(dataSourceSetter); ok {
 			ds.SetDataSource(c.cfg.DataSource)
+		}
+	}
+	if c.cfg.LLMProvider != nil {
+		if lp, ok := c.engine.(llmProviderSetter); ok {
+			lp.SetLLMProvider(c.cfg.LLMProvider)
 		}
 	}
 }

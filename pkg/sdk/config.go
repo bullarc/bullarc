@@ -40,6 +40,10 @@ type ClientConfig struct {
 	// DataSource is the custom data source to use instead of the engine default.
 	// Nil means the engine's own registered data sources are used.
 	DataSource bullarc.DataSource
+
+	// LLMProvider is the custom LLM provider to use for generating explanations.
+	// Nil means no LLM explanations are generated.
+	LLMProvider bullarc.LLMProvider
 }
 
 // Option configures a Client at construction time or at runtime via Configure.
@@ -95,6 +99,21 @@ func WithDataSource(ds bullarc.DataSource) Option {
 			)
 		}
 		cfg.DataSource = ds
+		return nil
+	}
+}
+
+// WithLLMProvider sets a custom LLM provider adapter. The engine will use this
+// provider for generating explanations when UseLLM is enabled in analysis requests.
+// p must not be nil.
+func WithLLMProvider(p bullarc.LLMProvider) Option {
+	return func(cfg *ClientConfig) error {
+		if p == nil {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("LLM provider must not be nil"),
+			)
+		}
+		cfg.LLMProvider = p
 		return nil
 	}
 }

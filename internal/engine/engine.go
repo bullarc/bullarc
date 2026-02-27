@@ -91,6 +91,12 @@ func (e *Engine) SetDataSource(ds bullarc.DataSource) {
 	e.dataSources[0] = ds
 }
 
+// SetLLMProvider replaces the LLM provider used by the engine for generating
+// explanations. Passing nil disables LLM explanations.
+func (e *Engine) SetLLMProvider(llm bullarc.LLMProvider) {
+	e.llmProvider = llm
+}
+
 // RegisterWebhookDispatcher attaches a webhook dispatcher that receives each
 // AnalysisResult immediately after Analyze completes. Dispatch errors are
 // logged but do not affect the returned result.
