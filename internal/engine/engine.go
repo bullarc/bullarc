@@ -21,20 +21,26 @@ type signalBus interface {
 	Subscribe(ctx context.Context, filter func(bullarc.Signal) bool) <-chan bullarc.Signal
 }
 
+// DefaultSocialConfidencePenalty is the percentage by which the composite
+// signal confidence is reduced when a symbol has elevated social attention.
+const DefaultSocialConfidencePenalty = 10.0
+
 // Engine orchestrates analysis by coordinating indicators, data sources,
 // and LLM providers. All exported methods are safe for concurrent use.
 type Engine struct {
-	mu                   sync.RWMutex
-	indicators           map[string]bullarc.Indicator
-	dataSources          []bullarc.DataSource
-	llmProvider          bullarc.LLMProvider
-	newsSource           bullarc.NewsSource
-	sentimentScorer      *llm.SentimentScorer
-	newsSentimentWeight  float64
-	llmMetaSignalWeight  float64
-	multiStepMode        bool
-	webhookDispatcher    *webhook.Dispatcher
-	bus                  signalBus
+	mu                      sync.RWMutex
+	indicators              map[string]bullarc.Indicator
+	dataSources             []bullarc.DataSource
+	llmProvider             bullarc.LLMProvider
+	newsSource              bullarc.NewsSource
+	sentimentScorer         *llm.SentimentScorer
+	newsSentimentWeight     float64
+	llmMetaSignalWeight     float64
+	multiStepMode           bool
+	webhookDispatcher       *webhook.Dispatcher
+	bus                     signalBus
+	socialTracker           bullarc.SocialTracker
+	socialConfidencePenalty float64
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -44,12 +50,13 @@ type Engine struct {
 // New creates a new Engine with default configuration.
 func New() *Engine {
 	return &Engine{
-		indicators:          make(map[string]bullarc.Indicator),
-		bus:                 signal.NewBus(),
-		lookback:            200,
-		interval:            "1Day",
-		newsSentimentWeight: 1.0,
-		llmMetaSignalWeight: 2.0,
+		indicators:              make(map[string]bullarc.Indicator),
+		bus:                     signal.NewBus(),
+		lookback:                200,
+		interval:                "1Day",
+		newsSentimentWeight:     1.0,
+		llmMetaSignalWeight:     2.0,
+		socialConfidencePenalty: DefaultSocialConfidencePenalty,
 	}
 }
 
@@ -122,6 +129,26 @@ func (e *Engine) RegisterSentimentScorer(ss *llm.SentimentScorer) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.sentimentScorer = ss
+}
+
+// RegisterSocialTracker sets the social media tracker used to detect elevated
+// retail attention. When registered, the engine attaches an
+// "elevated_social_attention" risk flag to the composite signal and reduces
+// its confidence by the configured penalty when the symbol is elevated.
+func (e *Engine) RegisterSocialTracker(st bullarc.SocialTracker) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.socialTracker = st
+}
+
+// SetSocialConfidencePenalty configures the percentage by which the composite
+// signal confidence is reduced when elevated social attention is detected.
+// The default is 10. Set to 0 to disable the confidence reduction while still
+// keeping the risk flag.
+func (e *Engine) SetSocialConfidencePenalty(pct float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.socialConfidencePenalty = pct
 }
 
 // SetNewsSentimentWeight sets the weight multiplier applied to the confidence
@@ -208,17 +235,19 @@ func (e *Engine) Subscribe(ctx context.Context, symbol string) <-chan bullarc.Si
 // engineSnapshot holds a point-in-time copy of the engine's mutable fields.
 // It is used by Analyze to avoid holding the lock during I/O operations.
 type engineSnapshot struct {
-	indicators          []bullarc.Indicator
-	primaryDS           bullarc.DataSource
-	llmProvider         bullarc.LLMProvider
-	newsSource          bullarc.NewsSource
-	sentimentScorer     *llm.SentimentScorer
-	newsSentimentWeight float64
-	llmMetaSignalWeight float64
-	multiStepMode       bool
-	webhookDispatcher   *webhook.Dispatcher
-	lookback            int
-	interval            string
+	indicators              []bullarc.Indicator
+	primaryDS               bullarc.DataSource
+	llmProvider             bullarc.LLMProvider
+	newsSource              bullarc.NewsSource
+	sentimentScorer         *llm.SentimentScorer
+	newsSentimentWeight     float64
+	llmMetaSignalWeight     float64
+	multiStepMode           bool
+	webhookDispatcher       *webhook.Dispatcher
+	socialTracker           bullarc.SocialTracker
+	socialConfidencePenalty float64
+	lookback                int
+	interval                string
 }
 
 // snapshot takes a brief read lock and captures the current engine state.
@@ -227,16 +256,18 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 	defer e.mu.RUnlock()
 
 	snap := engineSnapshot{
-		indicators:          e.selectIndicatorsLocked(indicatorNames),
-		llmProvider:         e.llmProvider,
-		newsSource:          e.newsSource,
-		sentimentScorer:     e.sentimentScorer,
-		newsSentimentWeight: e.newsSentimentWeight,
-		llmMetaSignalWeight: e.llmMetaSignalWeight,
-		multiStepMode:       e.multiStepMode,
-		webhookDispatcher:   e.webhookDispatcher,
-		lookback:            e.lookback,
-		interval:            e.interval,
+		indicators:              e.selectIndicatorsLocked(indicatorNames),
+		llmProvider:             e.llmProvider,
+		newsSource:              e.newsSource,
+		sentimentScorer:         e.sentimentScorer,
+		newsSentimentWeight:     e.newsSentimentWeight,
+		llmMetaSignalWeight:     e.llmMetaSignalWeight,
+		multiStepMode:           e.multiStepMode,
+		webhookDispatcher:       e.webhookDispatcher,
+		socialTracker:           e.socialTracker,
+		socialConfidencePenalty: e.socialConfidencePenalty,
+		lookback:                e.lookback,
+		interval:                e.interval,
 	}
 	if len(e.dataSources) > 0 {
 		snap.primaryDS = e.dataSources[0]
@@ -337,6 +368,9 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 	}
 
 	composite := signal.Aggregate(req.Symbol, indSignals)
+	if snap.socialTracker != nil {
+		composite = e.applySocialRiskFlag(ctx, req.Symbol, composite, snap)
+	}
 	result.Signals = append([]bullarc.Signal{composite}, indSignals...)
 
 	slog.Info("analysis complete",
@@ -609,6 +643,33 @@ func (e *Engine) explainResultWithProvider(ctx context.Context, result bullarc.A
 	}
 	slog.Info("llm explanation generated", "symbol", result.Symbol, "tokens", resp.TokensUsed, "model", resp.Model)
 	return resp.Text, nil
+}
+
+// applySocialRiskFlag fetches social metrics for the symbol and, when elevated
+// retail attention is detected, attaches the "elevated_social_attention" risk
+// flag to the composite signal and reduces its confidence by the configured
+// penalty. The signal direction is never changed. If the fetch fails, the
+// original signal is returned unmodified.
+func (e *Engine) applySocialRiskFlag(ctx context.Context, symbol string, composite bullarc.Signal, snap engineSnapshot) bullarc.Signal {
+	metrics, err := snap.socialTracker.FetchSocialMetrics(ctx, []string{symbol})
+	if err != nil {
+		slog.Warn("social tracker fetch failed, skipping risk flag", "symbol", symbol, "err", err)
+		return composite
+	}
+
+	for _, m := range metrics {
+		if m.Symbol == symbol && m.IsElevated {
+			flagged := signal.ApplySocialRiskFlag(composite, true, snap.socialConfidencePenalty)
+			slog.Info("social risk flag applied",
+				"symbol", symbol,
+				"velocity", m.Velocity,
+				"penalty_pct", snap.socialConfidencePenalty,
+				"confidence_before", composite.Confidence,
+				"confidence_after", flagged.Confidence)
+			return flagged
+		}
+	}
+	return composite
 }
 
 func (e *Engine) fetchBarsWithSnapshot(ctx context.Context, symbol string, snap engineSnapshot) ([]bullarc.OHLCV, error) {
