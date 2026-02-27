@@ -114,7 +114,7 @@ func printResult(result bullarc.AnalysisResult) {
 		return
 	}
 	composite := result.Signals[0]
-	fmt.Printf("signal:    %s (confidence=%.0f%%)\n", composite.Type, composite.Confidence)
+	fmt.Printf("signal:    %s (confidence=%.0f%%)\n", colorSignal(os.Stdout, composite.Type), composite.Confidence)
 	fmt.Printf("summary:   %s\n", composite.Explanation)
 	if result.LLMAnalysis != "" {
 		fmt.Printf("\nexplanation:\n%s\n", result.LLMAnalysis)
