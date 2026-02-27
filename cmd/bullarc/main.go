@@ -31,6 +31,7 @@ func main() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configureCmd)
 	rootCmd.AddCommand(paperCmd)
+	rootCmd.AddCommand(journalCmd)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		slog.Error("command failed", "err", err)
