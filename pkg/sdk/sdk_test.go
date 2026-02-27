@@ -65,6 +65,7 @@ func TestStream_ChannelClosedOnContextCancel(t *testing.T) {
 	client := newSDKClient(bars)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch := client.Stream(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"}, 100*time.Millisecond)
 
 	// Drain one batch then cancel.
