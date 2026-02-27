@@ -143,7 +143,11 @@ type AnalysisResult struct {
 	LLMAnalysis     string                      `json:"llm_analysis,omitempty"`
 	Anomalies       []Anomaly                   `json:"anomalies,omitempty"`
 	Risk            *RiskMetrics                `json:"risk,omitempty"`
-	Timestamp       time.Time                   `json:"timestamp"`
+	// Regime is the LLM-classified market regime for this analysis run.
+	// One of: "low_vol_trending", "high_vol_trending", "mean_reverting", "crisis".
+	// Empty when regime detection is disabled or no LLM provider is configured.
+	Regime    string    `json:"regime,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // Engine orchestrates analysis using indicators, data sources, and LLM providers.
