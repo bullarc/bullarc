@@ -20,6 +20,7 @@ var (
 	watchConfig   string
 	watchCSV      string
 	watchInterval time.Duration
+	watchLLMKey   string
 )
 
 func init() {
@@ -28,10 +29,11 @@ func init() {
 	watchCmd.Flags().StringVarP(&watchConfig, "config", "c", "", "path to config file")
 	watchCmd.Flags().StringVar(&watchCSV, "csv", "", "path to CSV file for local data")
 	watchCmd.Flags().DurationVarP(&watchInterval, "interval", "i", time.Minute, "poll interval")
+	watchCmd.Flags().StringVar(&watchLLMKey, "llm-key", "", "Anthropic API key (overrides config and ANTHROPIC_API_KEY env var)")
 }
 
 func runWatch(cmd *cobra.Command, _ []string) error {
-	e, err := buildEngine(watchConfig, watchCSV)
+	e, err := buildEngine(watchConfig, watchCSV, watchLLMKey)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -24,6 +25,7 @@ var (
 	analyzeConfig string
 	analyzeCSV    string
 	analyzeLLM    bool
+	analyzeLLMKey string
 )
 
 func init() {
@@ -32,10 +34,11 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&analyzeConfig, "config", "c", "", "path to config file")
 	analyzeCmd.Flags().StringVar(&analyzeCSV, "csv", "", "path to CSV file for local data")
 	analyzeCmd.Flags().BoolVar(&analyzeLLM, "llm", false, "generate plain English explanation via LLM")
+	analyzeCmd.Flags().StringVar(&analyzeLLMKey, "llm-key", "", "Anthropic API key (overrides config and ANTHROPIC_API_KEY env var)")
 }
 
 func runAnalyze(cmd *cobra.Command, _ []string) error {
-	e, err := buildEngine(analyzeConfig, analyzeCSV)
+	e, err := buildEngine(analyzeConfig, analyzeCSV, analyzeLLMKey)
 	if err != nil {
 		return err
 	}
@@ -47,9 +50,14 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// buildEngine constructs an Engine from an optional config file and optional CSV data source.
-func buildEngine(cfgPath, csvPath string) (*engine.Engine, error) {
-	var e *engine.Engine
+// buildEngine constructs an Engine from an optional config file, optional CSV data source,
+// and an optional LLM API key override. LLM key resolution order: llmKey param > config file > ANTHROPIC_API_KEY env var.
+func buildEngine(cfgPath, csvPath, llmKey string) (*engine.Engine, error) {
+	var (
+		e         *engine.Engine
+		llmModel  string
+		cfgLLMKey string
+	)
 	if cfgPath != "" {
 		cfg, err := config.Load(cfgPath)
 		if err != nil {
@@ -73,9 +81,8 @@ func buildEngine(cfgPath, csvPath string) (*engine.Engine, error) {
 				opts...,
 			))
 		}
-		if cfg.LLM.APIKey != "" {
-			e.RegisterLLMProvider(llm.NewAnthropicProvider(cfg.LLM.APIKey, cfg.LLM.Model))
-		}
+		cfgLLMKey = cfg.LLM.APIKey
+		llmModel = cfg.LLM.Model
 	} else {
 		e = engine.New()
 		for _, ind := range engine.DefaultIndicators() {
@@ -84,6 +91,16 @@ func buildEngine(cfgPath, csvPath string) (*engine.Engine, error) {
 	}
 	if csvPath != "" {
 		e.RegisterDataSource(datasource.NewCSVSource(csvPath))
+	}
+	effectiveKey := llmKey
+	if effectiveKey == "" {
+		effectiveKey = cfgLLMKey
+	}
+	if effectiveKey == "" {
+		effectiveKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+	if effectiveKey != "" {
+		e.RegisterLLMProvider(llm.NewAnthropicProvider(effectiveKey, llmModel))
 	}
 	return e, nil
 }
