@@ -107,12 +107,30 @@ type AnalysisRequest struct {
 	UseLLM     bool     `json:"use_llm"`
 }
 
+// AnomalySeverity indicates the significance level of a detected anomaly.
+type AnomalySeverity string
+
+const (
+	AnomalySeverityLow    AnomalySeverity = "low"
+	AnomalySeverityMedium AnomalySeverity = "medium"
+	AnomalySeverityHigh   AnomalySeverity = "high"
+)
+
+// Anomaly represents a detected divergence or unusual pattern in market data.
+type Anomaly struct {
+	Type               string          `json:"type"`
+	Description        string          `json:"description"`
+	Severity           AnomalySeverity `json:"severity"`
+	AffectedIndicators []string        `json:"affected_indicators"`
+}
+
 // AnalysisResult contains the full result of an analysis run.
 type AnalysisResult struct {
 	Symbol          string                      `json:"symbol"`
 	Signals         []Signal                    `json:"signals"`
 	IndicatorValues map[string][]IndicatorValue `json:"indicator_values,omitempty"`
 	LLMAnalysis     string                      `json:"llm_analysis,omitempty"`
+	Anomalies       []Anomaly                   `json:"anomalies,omitempty"`
 	Timestamp       time.Time                   `json:"timestamp"`
 }
 
