@@ -312,6 +312,10 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		}
 	}
 
+	if req.UseLLM && snap.llmProvider != nil {
+		result.Anomalies = e.detectAnomalies(ctx, req.Symbol, result.IndicatorValues, bars, snap)
+	}
+
 	if snap.webhookDispatcher != nil {
 		if err := snap.webhookDispatcher.Dispatch(ctx, result); err != nil {
 			slog.Warn("webhook dispatch failed", "symbol", req.Symbol, "err", err)
@@ -427,6 +431,35 @@ func (e *Engine) generateLLMMetaSignal(
 		"confidence", sig.Confidence,
 		"weight", snap.llmMetaSignalWeight)
 	return sig, true
+}
+
+// detectAnomalies calls the LLM to identify divergences and anomalies in the
+// historical indicator values. If fewer than 10 bars of data are available,
+// detection is skipped and an empty slice is returned. Errors are logged and
+// treated as non-fatal: the caller receives an empty slice rather than an error.
+func (e *Engine) detectAnomalies(
+	ctx context.Context,
+	symbol string,
+	indicatorValues map[string][]bullarc.IndicatorValue,
+	bars []bullarc.OHLCV,
+	snap engineSnapshot,
+) []bullarc.Anomaly {
+	if len(bars) < 10 {
+		slog.Info("skipping anomaly detection: insufficient data",
+			"symbol", symbol, "bars", len(bars))
+		return []bullarc.Anomaly{}
+	}
+
+	anomalies, ok := llm.DetectAnomalies(ctx, symbol, indicatorValues, snap.llmProvider)
+	if !ok {
+		slog.Warn("anomaly detection failed, returning empty list", "symbol", symbol)
+		return []bullarc.Anomaly{}
+	}
+
+	slog.Info("anomaly detection complete",
+		"symbol", symbol,
+		"anomalies", len(anomalies))
+	return anomalies
 }
 
 // explainResultWithProvider calls the given LLM provider to generate a plain
