@@ -49,3 +49,34 @@ func DispatchForTest(t testing.TB, srv *Server, reqJSON []byte) (string, bool) {
 	}
 	return text, resp.Result.IsError
 }
+
+// DispatchRawForTest drives a single JSON-RPC request through the server and
+// returns the raw JSON-decoded response map. It is used by protocol compliance
+// tests that need to inspect the full response shape rather than just tool
+// content.
+func DispatchRawForTest(t testing.TB, srv *Server, reqJSON []byte) map[string]any {
+	t.Helper()
+
+	var buf bytes.Buffer
+	srv.out = &buf
+
+	srv.dispatch(context.Background(), reqJSON)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &resp), "server response: %s", buf.String())
+	return resp
+}
+
+// DispatchBytesForTest drives a single message through the server and returns
+// the raw bytes written to the output. For notifications (no id), the server
+// must produce no output, so the returned slice will be empty.
+func DispatchBytesForTest(t testing.TB, srv *Server, msgJSON []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	srv.out = &buf
+
+	srv.dispatch(context.Background(), msgJSON)
+
+	return buf.Bytes()
+}
