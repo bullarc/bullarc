@@ -9,6 +9,12 @@ import (
 	"github.com/bullarc/bullarc"
 )
 
+// streamingBackend extends Backend with push-based signal subscription.
+// The concrete *engine.Engine satisfies this interface.
+type streamingBackend interface {
+	Subscribe(ctx context.Context, symbol string) <-chan bullarc.Signal
+}
+
 // Backend provides the capabilities exposed through MCP tools.
 // The concrete *engine.Engine satisfies this interface.
 type Backend interface {
@@ -18,13 +24,14 @@ type Backend interface {
 	HasLLMProvider() bool
 }
 
-// RegisterTools adds the get_signals, backtest_strategy, list_indicators, and
-// explain_signal tools to srv.
+// RegisterTools adds the get_signals, backtest_strategy, list_indicators,
+// explain_signal, and stream_signals tools to srv.
 func RegisterTools(srv *Server, b Backend) {
 	srv.AddTool(getSignalsTool(b))
 	srv.AddTool(backTestStrategyTool(b))
 	srv.AddTool(listIndicatorsTool(b))
 	srv.AddTool(explainSignalTool(b))
+	srv.AddTool(streamSignalsTool(b))
 }
 
 // backTestStrategyTool builds the backtest_strategy MCP tool.
@@ -236,6 +243,103 @@ func explainSignalTool(b Backend) Tool {
 			return result.LLMAnalysis, nil
 		},
 	}
+}
+
+// streamSignalsTool builds the stream_signals MCP tool.
+// It subscribes to the engine's signal bus for the given symbol, triggers a
+// single analysis, and waits up to timeout_seconds for signals to arrive.
+// This gives MCP clients push-based signal delivery: the client calls the tool
+// once and receives all signals computed during the wait window.
+func streamSignalsTool(b Backend) Tool {
+	return Tool{
+		Name: "stream_signals",
+		Description: "Subscribe to signal updates for a symbol and return all signals computed " +
+			"within a wait window. Unlike get_signals, this tool waits for the engine to push " +
+			"new signals rather than polling, making it suitable for detecting rapid market changes. " +
+			"Requires a streaming-capable backend.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"symbol": map[string]any{
+					"type":        "string",
+					"description": "Ticker symbol to subscribe to (e.g. \"AAPL\").",
+				},
+				"timeout_seconds": map[string]any{
+					"type":        "number",
+					"description": "Maximum seconds to wait for signals. Defaults to 5. Maximum 30.",
+				},
+			},
+			"required": []string{"symbol"},
+		},
+		Handler: func(ctx context.Context, args map[string]any) (string, error) {
+			symbol, _ := args["symbol"].(string)
+			if symbol == "" {
+				return "", fmt.Errorf("symbol is required")
+			}
+
+			timeoutSec := 5.0
+			if v, ok := args["timeout_seconds"].(float64); ok && v > 0 {
+				timeoutSec = v
+				if timeoutSec > 30 {
+					timeoutSec = 30
+				}
+			}
+
+			sb, ok := b.(streamingBackend)
+			if !ok {
+				return "", fmt.Errorf("streaming not supported by this backend")
+			}
+
+			waitCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec*float64(time.Second)))
+			defer cancel()
+
+			ch := sb.Subscribe(waitCtx, symbol)
+
+			// Trigger analysis to produce signals that will be pushed to the channel.
+			go func() {
+				_, _ = b.Analyze(waitCtx, bullarc.AnalysisRequest{Symbol: symbol})
+			}()
+
+			var signals []streamSignalOutput
+			for {
+				select {
+				case sig, open := <-ch:
+					if !open {
+						goto done
+					}
+					signals = append(signals, streamSignalOutput{
+						Symbol:      sig.Symbol,
+						Signal:      string(sig.Type),
+						Confidence:  sig.Confidence,
+						Indicator:   sig.Indicator,
+						Timestamp:   sig.Timestamp.Format(time.RFC3339),
+						Explanation: sig.Explanation,
+					})
+				case <-waitCtx.Done():
+					goto done
+				}
+			}
+		done:
+			if len(signals) == 0 {
+				return "", fmt.Errorf("no signals received for %s within %.0fs", symbol, timeoutSec)
+			}
+			data, err := json.MarshalIndent(signals, "", "  ")
+			if err != nil {
+				return "", fmt.Errorf("marshal signals: %w", err)
+			}
+			return string(data), nil
+		},
+	}
+}
+
+// streamSignalOutput is the JSON shape for a single signal in stream_signals output.
+type streamSignalOutput struct {
+	Symbol      string  `json:"symbol"`
+	Signal      string  `json:"signal"`
+	Confidence  float64 `json:"confidence"`
+	Indicator   string  `json:"indicator"`
+	Timestamp   string  `json:"timestamp"`
+	Explanation string  `json:"explanation,omitempty"`
 }
 
 // listIndicatorsTool builds the list_indicators MCP tool.

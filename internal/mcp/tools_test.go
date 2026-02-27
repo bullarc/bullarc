@@ -339,3 +339,124 @@ func TestExplainSignal_UseLLMFlagSet(t *testing.T) {
 	assert.True(t, capturedReq.UseLLM, "Analyze must be called with UseLLM=true")
 	assert.Equal(t, "MSFT", capturedReq.Symbol)
 }
+
+// --- stream_signals tests ---
+
+// streamingStubBackend implements both mcp.Backend and the streamingBackend
+// interface so stream_signals tests can exercise the push path.
+type streamingStubBackend struct {
+	stubBackend
+	subscribeFn func(ctx context.Context, symbol string) <-chan bullarc.Signal
+}
+
+func (s *streamingStubBackend) Subscribe(ctx context.Context, symbol string) <-chan bullarc.Signal {
+	if s.subscribeFn != nil {
+		return s.subscribeFn(ctx, symbol)
+	}
+	ch := make(chan bullarc.Signal)
+	close(ch)
+	return ch
+}
+
+// callStreamSignals invokes the stream_signals tool on a server built with b.
+func callStreamSignals(t *testing.T, b mcp.Backend, args map[string]any) (string, bool) {
+	t.Helper()
+	srv := mcp.New("test", "0.0.0")
+	mcp.RegisterTools(srv, b)
+	return invokeToolViaServer(t, srv, "stream_signals", args)
+}
+
+// TestStreamSignals_MissingSymbol verifies that omitting symbol returns an error.
+func TestStreamSignals_MissingSymbol(t *testing.T) {
+	b := &streamingStubBackend{}
+	text, isError := callStreamSignals(t, b, map[string]any{})
+	assert.True(t, isError)
+	assert.Contains(t, text, "symbol is required")
+}
+
+// TestStreamSignals_NonStreamingBackend verifies that a backend without
+// Subscribe returns an informative error.
+func TestStreamSignals_NonStreamingBackend(t *testing.T) {
+	b := &stubBackend{}
+	text, isError := callStreamSignals(t, b, map[string]any{"symbol": "AAPL"})
+	assert.True(t, isError)
+	assert.Contains(t, text, "streaming not supported")
+}
+
+// TestStreamSignals_ReceivesSignals verifies that signals published to the
+// subscription channel are returned as JSON.
+func TestStreamSignals_ReceivesSignals(t *testing.T) {
+	now := time.Date(2026, 2, 27, 10, 0, 0, 0, time.UTC)
+
+	b := &streamingStubBackend{
+		stubBackend: stubBackend{
+			analyzeFunc: func(_ context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+				return bullarc.AnalysisResult{
+					Symbol:    req.Symbol,
+					Timestamp: now,
+					Signals: []bullarc.Signal{
+						{
+							Type:       bullarc.SignalBuy,
+							Confidence: 80.0,
+							Indicator:  "composite",
+							Symbol:     req.Symbol,
+							Timestamp:  now,
+						},
+					},
+				}, nil
+			},
+		},
+		subscribeFn: func(ctx context.Context, symbol string) <-chan bullarc.Signal {
+			ch := make(chan bullarc.Signal, 4)
+			ch <- bullarc.Signal{
+				Type:       bullarc.SignalBuy,
+				Confidence: 80.0,
+				Indicator:  "composite",
+				Symbol:     symbol,
+				Timestamp:  now,
+			}
+			// Close after a brief delay so the tool can drain.
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
+		},
+	}
+
+	text, isError := callStreamSignals(t, b, map[string]any{
+		"symbol":          "AAPL",
+		"timeout_seconds": 2.0,
+	})
+	require.False(t, isError, "expected no error, got: %s", text)
+
+	var signals []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &signals))
+	require.NotEmpty(t, signals)
+
+	assert.Equal(t, "AAPL", signals[0]["symbol"])
+	assert.Equal(t, "BUY", signals[0]["signal"])
+	assert.InDelta(t, 80.0, signals[0]["confidence"], 0.01)
+}
+
+// TestStreamSignals_NoSignalsError verifies that timing out with no signals
+// returns an informative error.
+func TestStreamSignals_NoSignalsError(t *testing.T) {
+	b := &streamingStubBackend{
+		subscribeFn: func(ctx context.Context, _ string) <-chan bullarc.Signal {
+			ch := make(chan bullarc.Signal)
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
+		},
+	}
+
+	text, isError := callStreamSignals(t, b, map[string]any{
+		"symbol":          "EMPTY",
+		"timeout_seconds": 0.1,
+	})
+	assert.True(t, isError)
+	assert.Contains(t, text, "no signals received")
+}

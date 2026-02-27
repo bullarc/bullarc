@@ -120,7 +120,7 @@ func TestServer_ToolsList(t *testing.T) {
 
 	tools, ok := result["tools"].([]any)
 	require.True(t, ok, "result.tools must be an array")
-	assert.Len(t, tools, 4, "server must expose get_signals, backtest_strategy, list_indicators, explain_signal")
+	assert.Len(t, tools, 5, "server must expose get_signals, backtest_strategy, list_indicators, explain_signal, stream_signals")
 
 	// Build a name→tool map for assertion.
 	byName := make(map[string]map[string]any, len(tools))
@@ -132,7 +132,7 @@ func TestServer_ToolsList(t *testing.T) {
 		byName[name] = tool
 	}
 
-	expectedTools := []string{"get_signals", "backtest_strategy", "list_indicators", "explain_signal"}
+	expectedTools := []string{"get_signals", "backtest_strategy", "list_indicators", "explain_signal", "stream_signals"}
 	for _, name := range expectedTools {
 		tool, exists := byName[name]
 		require.True(t, exists, "tool %q must be present", name)
@@ -311,7 +311,7 @@ func TestServer_FullProtocolFlow(t *testing.T) {
 	listResp := mcp.DispatchRawForTest(t, srv, buildRPCRequest(2, "tools/list", nil))
 	assert.Nil(t, listResp["error"])
 	tools := listResp["result"].(map[string]any)["tools"].([]any)
-	assert.Len(t, tools, 4)
+	assert.Len(t, tools, 5)
 
 	// Step 4: tools/call list_indicators — must return a result.
 	callResp := mcp.DispatchRawForTest(t, srv, buildRPCRequest(3, "tools/call", map[string]any{
