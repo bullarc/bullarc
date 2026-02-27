@@ -17,11 +17,13 @@ var watchCmd = &cobra.Command{
 }
 
 var (
-	watchSymbol   string
-	watchConfig   string
-	watchCSV      string
-	watchInterval time.Duration
-	watchLLMKey   string
+	watchSymbol       string
+	watchConfig       string
+	watchCSV          string
+	watchInterval     time.Duration
+	watchLLMKey       string
+	watchAlpacaKey    string
+	watchAlpacaSecret string
 )
 
 func init() {
@@ -30,13 +32,18 @@ func init() {
 	watchCmd.Flags().StringVarP(&watchConfig, "config", "c", "", "path to config file")
 	watchCmd.Flags().StringVar(&watchCSV, "csv", "", "path to CSV file for local data")
 	watchCmd.Flags().DurationVarP(&watchInterval, "interval", "i", time.Minute, "poll interval")
-	watchCmd.Flags().StringVar(&watchLLMKey, "llm-key", "", "Anthropic API key (overrides config and ANTHROPIC_API_KEY env var)")
+	watchCmd.Flags().StringVar(&watchLLMKey, "llm-key", "", "Anthropic API key (overrides ANTHROPIC_API_KEY env var and config)")
+	watchCmd.Flags().StringVar(&watchAlpacaKey, "alpaca-key", "", "Alpaca API key ID (overrides ALPACA_API_KEY env var and config)")
+	watchCmd.Flags().StringVar(&watchAlpacaSecret, "alpaca-secret", "", "Alpaca secret key (overrides ALPACA_SECRET_KEY env var and config)")
 }
 
 func runWatch(cmd *cobra.Command, _ []string) error {
-	e, err := buildEngine(watchConfig, watchCSV, watchLLMKey)
+	e, err := buildEngine(watchConfig, watchCSV, watchLLMKey, watchAlpacaKey, watchAlpacaSecret)
 	if err != nil {
 		return err
+	}
+	if !e.HasDataSource() {
+		return errNoDataSource()
 	}
 	fmt.Printf("watching %s every %s (ctrl-c to stop)\n", watchSymbol, watchInterval)
 	return e.Watch(cmd.Context(), bullarc.AnalysisRequest{Symbol: watchSymbol}, watchInterval, func(result bullarc.AnalysisResult) {

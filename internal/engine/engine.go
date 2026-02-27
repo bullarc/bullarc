@@ -66,6 +66,11 @@ func (e *Engine) RegisterDataSource(ds bullarc.DataSource) {
 	e.dataSources = append(e.dataSources, ds)
 }
 
+// HasDataSource reports whether at least one data source is registered.
+func (e *Engine) HasDataSource() bool {
+	return len(e.dataSources) > 0
+}
+
 // RegisterLLMProvider sets the LLM provider for the engine.
 func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 	e.llmProvider = llm

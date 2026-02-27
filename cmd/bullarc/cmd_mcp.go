@@ -29,7 +29,7 @@ func init() {
 }
 
 func runMCP(cmd *cobra.Command, _ []string) error {
-	e, err := buildEngine(mcpConfig, "", "")
+	e, err := buildEngine(mcpConfig, "", "", "", "")
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
 	}
