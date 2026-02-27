@@ -106,6 +106,11 @@ type AnalysisRequest struct {
 	Symbol     string   `json:"symbol"`
 	Indicators []string `json:"indicators,omitempty"`
 	UseLLM     bool     `json:"use_llm"`
+	// Portfolio is an optional list of currently held symbols used for
+	// portfolio correlation checking. When non-empty and correlation checking
+	// is enabled, the engine asks the LLM whether the new position adds
+	// diversification or duplicates existing exposure.
+	Portfolio []string `json:"portfolio,omitempty"`
 }
 
 // AnomalySeverity indicates the significance level of a detected anomaly.

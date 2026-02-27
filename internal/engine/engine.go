@@ -47,6 +47,7 @@ type Engine struct {
 	riskConfig              RiskConfig
 	regimeConfig            RegimeConfig
 	regimeCache             *regimeCache
+	correlationConfig       CorrelationConfig
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -210,6 +211,16 @@ func (e *Engine) SetRegimeConfig(cfg RegimeConfig) {
 	e.regimeConfig = cfg
 }
 
+// SetCorrelationConfig updates the portfolio correlation checking configuration.
+// Calling this with Enabled=true activates the correlation check, which uses
+// the LLM to assess whether the symbol in an AnalysisRequest duplicates exposure
+// from the symbols listed in AnalysisRequest.Portfolio.
+func (e *Engine) SetCorrelationConfig(cfg CorrelationConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.correlationConfig = cfg
+}
+
 // SetNewsSentimentWeight sets the weight multiplier applied to the confidence
 // of the news sentiment signal before it participates in aggregation.
 // A value of 1.0 (the default) gives the news signal equal weight to one
@@ -310,6 +321,7 @@ type engineSnapshot struct {
 	optionsCfg              bullarc.OptionsConfig
 	riskConfig              RiskConfig
 	regimeConfig            RegimeConfig
+	correlationConfig       CorrelationConfig
 	lookback                int
 	interval                string
 }
@@ -335,6 +347,7 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 		optionsCfg:              e.optionsCfg,
 		riskConfig:              e.riskConfig,
 		regimeConfig:            e.regimeConfig,
+		correlationConfig:       e.correlationConfig,
 		lookback:                e.lookback,
 		interval:                e.interval,
 	}
@@ -462,6 +475,12 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 				"confidence_after", adjusted)
 			composite.Confidence = adjusted
 		}
+	}
+
+	// Apply portfolio correlation check when enabled and a non-empty portfolio
+	// is provided. Adds "high_correlation" flag when the LLM detects high overlap.
+	if len(req.Portfolio) > 0 {
+		composite = e.checkPortfolioCorrelation(ctx, req.Symbol, req.Portfolio, composite, snap)
 	}
 
 	result.Signals = append([]bullarc.Signal{composite}, indSignals...)
