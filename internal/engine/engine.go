@@ -79,6 +79,13 @@ func (e *Engine) HasDataSource() bool {
 	return len(e.dataSources) > 0
 }
 
+// HasLLMProvider reports whether an LLM provider is registered.
+func (e *Engine) HasLLMProvider() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.llmProvider != nil
+}
+
 // RegisterLLMProvider sets the LLM provider for the engine.
 func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 	e.mu.Lock()

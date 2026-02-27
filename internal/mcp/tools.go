@@ -15,13 +15,16 @@ type Backend interface {
 	Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
 	BacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
 	ListIndicators() []bullarc.IndicatorMeta
+	HasLLMProvider() bool
 }
 
-// RegisterTools adds the get_signals, backtest_strategy and list_indicators tools to srv.
+// RegisterTools adds the get_signals, backtest_strategy, list_indicators, and
+// explain_signal tools to srv.
 func RegisterTools(srv *Server, b Backend) {
 	srv.AddTool(getSignalsTool(b))
 	srv.AddTool(backTestStrategyTool(b))
 	srv.AddTool(listIndicatorsTool(b))
+	srv.AddTool(explainSignalTool(b))
 }
 
 // backTestStrategyTool builds the backtest_strategy MCP tool.
@@ -191,6 +194,48 @@ type signalOutput struct {
 	Timestamp   string  `json:"timestamp,omitempty"`
 	Explanation string  `json:"explanation,omitempty"`
 	Error       string  `json:"error,omitempty"`
+}
+
+// explainSignalTool builds the explain_signal MCP tool.
+// It runs analysis with LLM enabled and returns the plain-English explanation.
+func explainSignalTool(b Backend) Tool {
+	return Tool{
+		Name: "explain_signal",
+		Description: "Generate a plain-English explanation of the current trading signal for a " +
+			"symbol using an LLM. Returns an explanation of what the technical indicators mean " +
+			"for a retail investor. Requires an LLM provider to be configured.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"symbol": map[string]any{
+					"type":        "string",
+					"description": "The ticker symbol to explain (e.g. \"AAPL\").",
+				},
+			},
+			"required": []string{"symbol"},
+		},
+		Handler: func(ctx context.Context, args map[string]any) (string, error) {
+			symbol, _ := args["symbol"].(string)
+			if symbol == "" {
+				return "", fmt.Errorf("symbol is required")
+			}
+
+			if !b.HasLLMProvider() {
+				return "", fmt.Errorf("LLM key is required for signal explanations: configure an LLM provider via ANTHROPIC_API_KEY or the config file")
+			}
+
+			result, err := b.Analyze(ctx, bullarc.AnalysisRequest{Symbol: symbol, UseLLM: true})
+			if err != nil {
+				return "", fmt.Errorf("analysis failed: %w", err)
+			}
+
+			if result.LLMAnalysis == "" {
+				return "", fmt.Errorf("no explanation produced for %s", symbol)
+			}
+
+			return result.LLMAnalysis, nil
+		},
+	}
 }
 
 // listIndicatorsTool builds the list_indicators MCP tool.
