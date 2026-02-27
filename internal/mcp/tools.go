@@ -20,18 +20,20 @@ type streamingBackend interface {
 type Backend interface {
 	Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
 	BacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
+	ExplainBacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
 	ListIndicators() []bullarc.IndicatorMeta
 	HasLLMProvider() bool
 }
 
 // RegisterTools adds the get_signals, backtest_strategy, list_indicators,
-// explain_signal, and stream_signals tools to srv.
+// explain_signal, stream_signals, and explain_backtest tools to srv.
 func RegisterTools(srv *Server, b Backend) {
 	srv.AddTool(getSignalsTool(b))
 	srv.AddTool(backTestStrategyTool(b))
 	srv.AddTool(listIndicatorsTool(b))
 	srv.AddTool(explainSignalTool(b))
 	srv.AddTool(streamSignalsTool(b))
+	srv.AddTool(explainBacktestTool(b))
 }
 
 // backTestStrategyTool builds the backtest_strategy MCP tool.
@@ -340,6 +342,105 @@ type streamSignalOutput struct {
 	Indicator   string  `json:"indicator"`
 	Timestamp   string  `json:"timestamp"`
 	Explanation string  `json:"explanation,omitempty"`
+}
+
+// explainBacktestTool builds the explain_backtest MCP tool.
+// It runs a backtest on a CSV file and returns both the raw performance statistics
+// and an AI-generated plain English explanation. When no LLM provider is configured,
+// the raw stats are returned together with a note directing the user to configure one.
+func explainBacktestTool(b Backend) Tool {
+	return Tool{
+		Name: "explain_backtest",
+		Description: "Run a backtest on historical OHLCV data from a CSV file and return " +
+			"performance statistics together with an AI-generated plain English explanation " +
+			"covering overall strategy performance, notable winning and losing periods, and " +
+			"which signals contributed most to the results. When no LLM provider is configured, " +
+			"the raw statistics are returned with guidance on enabling AI explanations.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"csv_path": map[string]any{
+					"type":        "string",
+					"description": "Absolute path to a CSV file with OHLCV data (date,open,high,low,close,volume).",
+				},
+				"symbol": map[string]any{
+					"type":        "string",
+					"description": "Ticker symbol label for the backtest result. Defaults to UNKNOWN.",
+				},
+				"indicators": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Indicator names to use (e.g. SMA_14, RSI_14). Empty means all registered indicators.",
+				},
+			},
+			"required": []string{"csv_path"},
+		},
+		Handler: func(ctx context.Context, args map[string]any) (string, error) {
+			csvPath, _ := args["csv_path"].(string)
+			if csvPath == "" {
+				return "", fmt.Errorf("csv_path is required")
+			}
+
+			symbol, _ := args["symbol"].(string)
+			if symbol == "" {
+				symbol = "UNKNOWN"
+			}
+
+			var indicators []string
+			if raw, ok := args["indicators"].([]any); ok {
+				for _, v := range raw {
+					if s, ok := v.(string); ok && s != "" {
+						indicators = append(indicators, s)
+					}
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			defer cancel()
+
+			result, err := b.ExplainBacktestCSV(ctx, csvPath, symbol, indicators)
+			if err != nil {
+				return "", fmt.Errorf("backtest failed: %w", err)
+			}
+
+			output := explainedBacktestOutput{
+				Symbol:       result.Symbol,
+				Timestamp:    result.Timestamp.Format(time.RFC3339),
+				TotalSignals: result.Summary.TotalSignals,
+				BuyCount:     result.Summary.BuyCount,
+				SellCount:    result.Summary.SellCount,
+				HoldCount:    result.Summary.HoldCount,
+				SimReturn:    result.Summary.SimReturn,
+				MaxDrawdown:  result.Summary.MaxDrawdown,
+				WinRate:      result.Summary.WinRate,
+				LLMAnalysis:  result.LLMAnalysis,
+			}
+			if !b.HasLLMProvider() {
+				output.Note = "Configure an LLM provider (e.g. ANTHROPIC_API_KEY) to receive an AI-generated explanation."
+			}
+
+			data, err := json.MarshalIndent(output, "", "  ")
+			if err != nil {
+				return "", fmt.Errorf("marshal result: %w", err)
+			}
+			return string(data), nil
+		},
+	}
+}
+
+// explainedBacktestOutput is the JSON shape returned by the explain_backtest tool.
+type explainedBacktestOutput struct {
+	Symbol       string  `json:"symbol"`
+	Timestamp    string  `json:"timestamp"`
+	TotalSignals int     `json:"total_signals"`
+	BuyCount     int     `json:"buy_count"`
+	SellCount    int     `json:"sell_count"`
+	HoldCount    int     `json:"hold_count"`
+	SimReturn    float64 `json:"sim_return_pct"`
+	MaxDrawdown  float64 `json:"max_drawdown_pct"`
+	WinRate      float64 `json:"win_rate_pct"`
+	LLMAnalysis  string  `json:"llm_explanation,omitempty"`
+	Note         string  `json:"note,omitempty"`
 }
 
 // listIndicatorsTool builds the list_indicators MCP tool.
