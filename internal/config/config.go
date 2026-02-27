@@ -16,6 +16,7 @@ type Config struct {
 	LLM         LLMConfig         `json:"llm" yaml:"llm"`
 	MCP         MCPConfig         `json:"mcp" yaml:"mcp"`
 	Webhooks    WebhookConfig     `json:"webhooks" yaml:"webhooks"`
+	Social      SocialConfig      `json:"social" yaml:"social"`
 }
 
 // EngineConfig configures the analysis engine.
@@ -75,6 +76,14 @@ type WebhookConfig struct {
 	Enabled bool          `json:"enabled" yaml:"enabled"`
 	URLs    []string      `json:"urls" yaml:"urls"`
 	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+}
+
+// SocialConfig configures Reddit mention tracking.
+type SocialConfig struct {
+	Enabled        bool          `json:"enabled" yaml:"enabled"`
+	Provider       string        `json:"provider" yaml:"provider"`               // "tradestie" (default) or "apewisdom"
+	PollInterval   time.Duration `json:"poll_interval" yaml:"poll_interval"`     // default: 15 minutes
+	SpikeThreshold float64       `json:"spike_threshold" yaml:"spike_threshold"` // default: 3.0
 }
 
 // Load reads a YAML (or JSON) config file at path and returns the parsed Config.

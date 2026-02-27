@@ -157,6 +157,22 @@ type NewsSource interface {
 	FetchNews(ctx context.Context, symbols []string, since time.Time) ([]NewsArticle, error)
 }
 
+// SocialMetrics contains Reddit mention data for a tracked symbol.
+type SocialMetrics struct {
+	Symbol     string    `json:"symbol"`
+	Mentions   int       `json:"mentions"`
+	Sentiment  float64   `json:"sentiment"`
+	Rank       int       `json:"rank"`
+	Velocity   float64   `json:"velocity"`
+	IsElevated bool      `json:"is_elevated"`
+	Timestamp  time.Time `json:"timestamp"`
+}
+
+// SocialTracker fetches Reddit mention metrics for one or more symbols.
+type SocialTracker interface {
+	FetchSocialMetrics(ctx context.Context, symbols []string) ([]SocialMetrics, error)
+}
+
 // Sentinel errors.
 var (
 	ErrInsufficientData      = &Error{Code: "INSUFFICIENT_DATA", Message: "not enough data bars for computation"}
