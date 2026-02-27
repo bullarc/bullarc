@@ -45,6 +45,8 @@ type Engine struct {
 	optionsFlowWeight       float64
 	optionsCfg              bullarc.OptionsConfig
 	riskConfig              RiskConfig
+	regimeConfig            RegimeConfig
+	regimeCache             *regimeCache
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -63,6 +65,8 @@ func New() *Engine {
 		socialConfidencePenalty: DefaultSocialConfidencePenalty,
 		optionsFlowWeight:       1.0,
 		riskConfig:              defaultRiskConfig(),
+		regimeConfig:            defaultRegimeConfig(),
+		regimeCache:             newRegimeCache(),
 	}
 }
 
@@ -196,6 +200,16 @@ func (e *Engine) SetRiskConfig(cfg RiskConfig) {
 	e.riskConfig = cfg
 }
 
+// SetRegimeConfig updates the LLM-based market regime detection configuration.
+// Calling this with Enabled=true activates regime detection, which adjusts the
+// composite signal confidence based on the detected regime after each analysis.
+// The cache is shared across analyses to avoid redundant LLM calls.
+func (e *Engine) SetRegimeConfig(cfg RegimeConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.regimeConfig = cfg
+}
+
 // SetNewsSentimentWeight sets the weight multiplier applied to the confidence
 // of the news sentiment signal before it participates in aggregation.
 // A value of 1.0 (the default) gives the news signal equal weight to one
@@ -295,6 +309,7 @@ type engineSnapshot struct {
 	optionsFlowWeight       float64
 	optionsCfg              bullarc.OptionsConfig
 	riskConfig              RiskConfig
+	regimeConfig            RegimeConfig
 	lookback                int
 	interval                string
 }
@@ -319,6 +334,7 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 		optionsFlowWeight:       e.optionsFlowWeight,
 		optionsCfg:              e.optionsCfg,
 		riskConfig:              e.riskConfig,
+		regimeConfig:            e.regimeConfig,
 		lookback:                e.lookback,
 		interval:                e.interval,
 	}
@@ -432,6 +448,22 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 	if snap.socialTracker != nil {
 		composite = e.applySocialRiskFlag(ctx, req.Symbol, composite, snap)
 	}
+
+	// Apply regime-based confidence adjustment when regime detection is enabled
+	// and an LLM provider is available.
+	if snap.regimeConfig.Enabled && snap.llmProvider != nil {
+		if regime := e.detectRegime(ctx, req.Symbol, bars, result.IndicatorValues, snap); regime != "" {
+			result.Regime = regime
+			adjusted := applyRegimeMultiplier(regime, composite.Confidence)
+			slog.Info("regime confidence adjustment applied",
+				"symbol", req.Symbol,
+				"regime", regime,
+				"confidence_before", composite.Confidence,
+				"confidence_after", adjusted)
+			composite.Confidence = adjusted
+		}
+	}
+
 	result.Signals = append([]bullarc.Signal{composite}, indSignals...)
 
 	if risk, ok := computeRiskMetrics(composite, latestBar.Close, result.IndicatorValues, snap.riskConfig); ok {
@@ -772,6 +804,59 @@ func (e *Engine) generateOptionsFlowSignal(ctx context.Context, symbol string, s
 		"events", len(events),
 		"weight", snap.optionsFlowWeight)
 	return out, true
+}
+
+// detectRegime checks the regime cache and, on a miss, calls the LLM to classify
+// the current market regime based on computed volatility metrics. The result is
+// stored in the cache for snap.regimeConfig.CacheDuration (default: 1 hour).
+// Returns "" when insufficient data is available or the LLM call fails.
+func (e *Engine) detectRegime(
+	ctx context.Context,
+	symbol string,
+	bars []bullarc.OHLCV,
+	indicatorValues map[string][]bullarc.IndicatorValue,
+	snap engineSnapshot,
+) string {
+	if cached, ok := e.regimeCache.get(symbol); ok {
+		slog.Info("regime cache hit", "symbol", symbol, "regime", cached)
+		return cached
+	}
+
+	atrName := snap.regimeConfig.ATRIndicatorName
+	if atrName == "" {
+		atrName = "ATR_14"
+	}
+	bbName := snap.regimeConfig.BBIndicatorName
+	if bbName == "" {
+		bbName = "BB_20_2.0"
+	}
+
+	metrics, ok := computeVolatilityMetrics(bars, indicatorValues, atrName, bbName)
+	if !ok {
+		slog.Info("regime detection skipped: insufficient data",
+			"symbol", symbol, "bars", len(bars))
+		return ""
+	}
+
+	regime, ok := llm.DetectRegime(ctx, symbol,
+		metrics.atrTrendPct, metrics.bbBandwidth, metrics.recentDrawdownPct,
+		snap.llmProvider)
+	if !ok {
+		slog.Warn("regime detection LLM call failed, skipping", "symbol", symbol)
+		return ""
+	}
+
+	ttl := snap.regimeConfig.CacheDuration
+	if ttl <= 0 {
+		ttl = DefaultRegimeCacheDuration
+	}
+	e.regimeCache.set(symbol, regime, ttl)
+
+	slog.Info("regime detected and cached",
+		"symbol", symbol,
+		"regime", regime,
+		"cache_ttl", ttl)
+	return regime
 }
 
 func (e *Engine) fetchBarsWithSnapshot(ctx context.Context, symbol string, snap engineSnapshot) ([]bullarc.OHLCV, error) {
