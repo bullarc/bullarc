@@ -15,7 +15,8 @@ import (
 
 // stubBackend is a test double implementing the mcp.Backend interface.
 type stubBackend struct {
-	analyzeFunc func(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
+	analyzeFunc    func(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
+	hasLLMProvider bool
 }
 
 func (s *stubBackend) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
@@ -30,6 +31,8 @@ func (s *stubBackend) BacktestCSV(_ context.Context, _, _ string, _ []string) (b
 }
 
 func (s *stubBackend) ListIndicators() []bullarc.IndicatorMeta { return nil }
+
+func (s *stubBackend) HasLLMProvider() bool { return s.hasLLMProvider }
 
 // callGetSignals is a helper that invokes the get_signals tool registered on a server
 // built with the given backend.
@@ -232,4 +235,107 @@ func TestGetSignals_NoSignalsProduced(t *testing.T) {
 	assert.Equal(t, "EMPTY", r["symbol"])
 	assert.NotEmpty(t, r["error"])
 	assert.Contains(t, r["error"].(string), "no signals produced")
+}
+
+// callExplainSignal is a helper that invokes the explain_signal tool on a server
+// built with the given backend.
+func callExplainSignal(t *testing.T, b mcp.Backend, args map[string]any) (string, bool) {
+	t.Helper()
+	srv := mcp.New("test", "0.0.0")
+	mcp.RegisterTools(srv, b)
+	return invokeToolViaServer(t, srv, "explain_signal", args)
+}
+
+// TestExplainSignal_MissingSymbol verifies that omitting the symbol argument returns an error.
+func TestExplainSignal_MissingSymbol(t *testing.T) {
+	b := &stubBackend{hasLLMProvider: true}
+	text, isError := callExplainSignal(t, b, map[string]any{})
+	assert.True(t, isError, "expected isError=true for missing symbol")
+	assert.Contains(t, text, "symbol is required")
+}
+
+// TestExplainSignal_NoLLMProvider verifies that the tool returns an informative error
+// when no LLM provider is configured.
+func TestExplainSignal_NoLLMProvider(t *testing.T) {
+	b := &stubBackend{hasLLMProvider: false}
+	text, isError := callExplainSignal(t, b, map[string]any{"symbol": "AAPL"})
+	assert.True(t, isError, "expected isError=true when no LLM provider")
+	assert.Contains(t, text, "LLM key is required")
+}
+
+// TestExplainSignal_ValidExplanation verifies that a successful analysis with LLM analysis
+// returns the explanation text.
+func TestExplainSignal_ValidExplanation(t *testing.T) {
+	const wantExplanation = "AAPL shows a strong bullish trend based on SMA and RSI indicators."
+	b := &stubBackend{
+		hasLLMProvider: true,
+		analyzeFunc: func(_ context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+			return bullarc.AnalysisResult{
+				Symbol:      req.Symbol,
+				Timestamp:   time.Now(),
+				LLMAnalysis: wantExplanation,
+				Signals: []bullarc.Signal{
+					{Type: bullarc.SignalBuy, Confidence: 80, Indicator: "composite", Symbol: req.Symbol},
+				},
+			}, nil
+		},
+	}
+
+	text, isError := callExplainSignal(t, b, map[string]any{"symbol": "AAPL"})
+	require.False(t, isError, "expected no error for valid explanation, got: %s", text)
+	assert.Equal(t, wantExplanation, text)
+}
+
+// TestExplainSignal_AnalysisError verifies that an analysis error surfaces as a tool error.
+func TestExplainSignal_AnalysisError(t *testing.T) {
+	b := &stubBackend{
+		hasLLMProvider: true,
+		analyzeFunc: func(_ context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+			return bullarc.AnalysisResult{}, fmt.Errorf("data source unavailable")
+		},
+	}
+
+	text, isError := callExplainSignal(t, b, map[string]any{"symbol": "AAPL"})
+	assert.True(t, isError, "expected isError=true when analysis fails")
+	assert.Contains(t, text, "analysis failed")
+	assert.Contains(t, text, "data source unavailable")
+}
+
+// TestExplainSignal_EmptyLLMAnalysis verifies that an empty LLM analysis surfaces an error.
+func TestExplainSignal_EmptyLLMAnalysis(t *testing.T) {
+	b := &stubBackend{
+		hasLLMProvider: true,
+		analyzeFunc: func(_ context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+			return bullarc.AnalysisResult{
+				Symbol:      req.Symbol,
+				Timestamp:   time.Now(),
+				LLMAnalysis: "",
+			}, nil
+		},
+	}
+
+	text, isError := callExplainSignal(t, b, map[string]any{"symbol": "TSLA"})
+	assert.True(t, isError, "expected isError=true when LLM analysis is empty")
+	assert.Contains(t, text, "no explanation produced")
+}
+
+// TestExplainSignal_UseLLMFlagSet verifies that Analyze is called with UseLLM=true.
+func TestExplainSignal_UseLLMFlagSet(t *testing.T) {
+	var capturedReq bullarc.AnalysisRequest
+	b := &stubBackend{
+		hasLLMProvider: true,
+		analyzeFunc: func(_ context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+			capturedReq = req
+			return bullarc.AnalysisResult{
+				Symbol:      req.Symbol,
+				Timestamp:   time.Now(),
+				LLMAnalysis: "explanation text",
+			}, nil
+		},
+	}
+
+	_, isError := callExplainSignal(t, b, map[string]any{"symbol": "MSFT"})
+	require.False(t, isError)
+	assert.True(t, capturedReq.UseLLM, "Analyze must be called with UseLLM=true")
+	assert.Equal(t, "MSFT", capturedReq.Symbol)
 }
