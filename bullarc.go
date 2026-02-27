@@ -125,6 +125,16 @@ type Anomaly struct {
 	AffectedIndicators []string        `json:"affected_indicators"`
 }
 
+// RiskMetrics contains ATR-based position sizing and risk management parameters
+// derived from the composite signal and current volatility.
+type RiskMetrics struct {
+	PositionSizePct float64 `json:"position_size_pct"`
+	StopLoss        float64 `json:"stop_loss"`
+	TakeProfit      float64 `json:"take_profit"`
+	RiskRewardRatio float64 `json:"risk_reward_ratio"`
+	ATR             float64 `json:"atr"`
+}
+
 // AnalysisResult contains the full result of an analysis run.
 type AnalysisResult struct {
 	Symbol          string                      `json:"symbol"`
@@ -132,6 +142,7 @@ type AnalysisResult struct {
 	IndicatorValues map[string][]IndicatorValue `json:"indicator_values,omitempty"`
 	LLMAnalysis     string                      `json:"llm_analysis,omitempty"`
 	Anomalies       []Anomaly                   `json:"anomalies,omitempty"`
+	Risk            *RiskMetrics                `json:"risk,omitempty"`
 	Timestamp       time.Time                   `json:"timestamp"`
 }
 
