@@ -124,6 +124,21 @@ type Engine interface {
 	RegisterLLMProvider(llm LLMProvider)
 }
 
+// NewsArticle represents a single news article from a news data source.
+type NewsArticle struct {
+	ID          string    `json:"id"`
+	Headline    string    `json:"headline"`
+	Summary     string    `json:"summary"`
+	Source      string    `json:"source"`
+	Symbols     []string  `json:"symbols"`
+	PublishedAt time.Time `json:"published_at"`
+}
+
+// NewsSource fetches news articles for given symbols.
+type NewsSource interface {
+	FetchNews(ctx context.Context, symbols []string, since time.Time) ([]NewsArticle, error)
+}
+
 // Sentinel errors.
 var (
 	ErrInsufficientData      = &Error{Code: "INSUFFICIENT_DATA", Message: "not enough data bars for computation"}
@@ -132,6 +147,7 @@ var (
 	ErrLLMUnavailable        = &Error{Code: "LLM_UNAVAILABLE", Message: "LLM provider is unavailable"}
 	ErrSymbolNotFound        = &Error{Code: "SYMBOL_NOT_FOUND", Message: "symbol not found"}
 	ErrTimeout               = &Error{Code: "TIMEOUT", Message: "operation timed out"}
+	ErrRateLimitExceeded     = &Error{Code: "RATE_LIMIT_EXCEEDED", Message: "API rate limit exceeded"}
 )
 
 // Error is a structured error with a code and message.
