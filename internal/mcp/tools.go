@@ -15,6 +15,25 @@ type streamingBackend interface {
 	Subscribe(ctx context.Context, symbol string) <-chan bullarc.Signal
 }
 
+// newsSentimentFetcher is an optional capability for fetching news sentiment.
+// The concrete *engine.Engine satisfies this interface when a news source and
+// sentiment scorer are registered.
+type newsSentimentFetcher interface {
+	GetNewsSentiment(ctx context.Context, symbol string, hours int) (bullarc.NewsSentimentSummary, error)
+}
+
+// riskMetricsFetcher is an optional capability for on-demand risk metric computation.
+// The concrete *engine.Engine satisfies this interface when an ATR indicator is registered.
+type riskMetricsFetcher interface {
+	FetchRiskMetrics(ctx context.Context, symbol string) (*bullarc.RiskMetrics, string, error)
+}
+
+// deepAnalyzer is an optional capability for multi-step deep analysis.
+// The concrete *engine.Engine satisfies this interface.
+type deepAnalyzer interface {
+	AnalyzeDeep(ctx context.Context, symbol string) (bullarc.AnalysisResult, error)
+}
+
 // Backend provides the capabilities exposed through MCP tools.
 // The concrete *engine.Engine satisfies this interface.
 type Backend interface {
@@ -26,7 +45,8 @@ type Backend interface {
 }
 
 // RegisterTools adds the get_signals, backtest_strategy, list_indicators,
-// explain_signal, stream_signals, and explain_backtest tools to srv.
+// explain_signal, stream_signals, explain_backtest, get_news_sentiment,
+// get_risk_metrics, analyze_with_ai, and compare_symbols tools to srv.
 func RegisterTools(srv *Server, b Backend) {
 	srv.AddTool(getSignalsTool(b))
 	srv.AddTool(backTestStrategyTool(b))
@@ -34,6 +54,10 @@ func RegisterTools(srv *Server, b Backend) {
 	srv.AddTool(explainSignalTool(b))
 	srv.AddTool(streamSignalsTool(b))
 	srv.AddTool(explainBacktestTool(b))
+	srv.AddTool(getNewsSentimentTool(b))
+	srv.AddTool(getRiskMetricsTool(b))
+	srv.AddTool(analyzeWithAITool(b))
+	srv.AddTool(compareSymbolsTool(b))
 }
 
 // backTestStrategyTool builds the backtest_strategy MCP tool.
