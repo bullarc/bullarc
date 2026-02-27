@@ -36,6 +36,7 @@ type Signal struct {
 	Timestamp   time.Time      `json:"timestamp"`
 	Explanation string         `json:"explanation"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
+	RiskFlags   []string       `json:"risk_flags,omitempty"`
 }
 
 // IndicatorMeta describes an indicator's metadata.
