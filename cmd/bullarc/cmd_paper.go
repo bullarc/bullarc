@@ -13,6 +13,7 @@ import (
 
 	"github.com/bullarc/bullarc"
 	"github.com/bullarc/bullarc/internal/datasource"
+	"github.com/bullarc/bullarc/internal/journal"
 )
 
 const (
@@ -56,6 +57,7 @@ var (
 	paperInterval            time.Duration
 	paperConfidenceThreshold float64
 	paperBaseURL             string
+	paperJournalPath         string
 )
 
 func init() {
@@ -66,6 +68,7 @@ func init() {
 	paperTradeCmd.Flags().DurationVarP(&paperInterval, "interval", "i", 5*time.Minute, "poll interval for new signals")
 	paperTradeCmd.Flags().Float64Var(&paperConfidenceThreshold, "confidence", defaultConfidenceThreshold, "minimum signal confidence to trigger a trade (0-100)")
 	paperTradeCmd.Flags().StringVar(&paperBaseURL, "paper-url", "", "Alpaca paper trading base URL (for testing)")
+	paperTradeCmd.Flags().StringVar(&paperJournalPath, "journal", defaultJournalPath, "path to trade journal JSON file")
 	_ = paperTradeCmd.MarkFlagRequired("symbol")
 
 	paperPositionsCmd.Flags().StringVar(&paperAlpacaKey, "alpaca-key", "", "Alpaca paper trading key ID")
@@ -143,10 +146,20 @@ func runPaperTrade(cmd *cobra.Command, _ []string) error {
 		return errNoDataSource()
 	}
 
+	// Open journal — LLM key is optional; journal still works without it.
+	j, err := openJournalWithContext(cmd.Context(), paperJournalPath, resolveJournalLLMKey(paperLLMKey))
+	if err != nil {
+		return err
+	}
+
 	executor := &paperTradeExecutor{
 		trader:              trader,
 		confidenceThreshold: paperConfidenceThreshold,
 		stopLosses:          make(map[string]float64),
+		entryOrders:         make(map[string]bullarc.OrderResult),
+		entrySignals:        make(map[string]bullarc.Signal),
+		entryIndicators:     make(map[string]map[string][]bullarc.IndicatorValue),
+		journal:             j,
 	}
 
 	fmt.Printf("%s auto-trading %s every %s (confidence threshold: %.0f%%) — ctrl-c to stop\n",
@@ -164,9 +177,13 @@ func runPaperTrade(cmd *cobra.Command, _ []string) error {
 type paperTradeExecutor struct {
 	trader              *datasource.AlpacaPaperTrader
 	confidenceThreshold float64
+	journal             *journal.Journal
 
-	mu         sync.Mutex
-	stopLosses map[string]float64 // symbol -> stop-loss price from last BUY order
+	mu              sync.Mutex
+	stopLosses      map[string]float64                            // symbol -> stop-loss price from last BUY order
+	entryOrders     map[string]bullarc.OrderResult                // symbol -> buy order result
+	entrySignals    map[string]bullarc.Signal                     // symbol -> entry signal
+	entryIndicators map[string]map[string][]bullarc.IndicatorValue // symbol -> indicator values at entry
 }
 
 // onResult evaluates a new analysis result and decides whether to place a paper trade.
@@ -240,6 +257,15 @@ func (e *paperTradeExecutor) placeBuy(ctx context.Context, result bullarc.Analys
 		paperTradingBanner, symbol, result2.Qty, result2.FilledPrice,
 		composite.Confidence, result2.OrderID)
 
+	// Track entry info for journal logging when position is later closed.
+	e.mu.Lock()
+	e.entryOrders[symbol] = result2
+	e.entrySignals[symbol] = composite
+	if result.IndicatorValues != nil {
+		e.entryIndicators[symbol] = copyIndicatorValues(result.IndicatorValues)
+	}
+	e.mu.Unlock()
+
 	// Store stop-loss price for this position.
 	if result.Risk != nil && result.Risk.StopLoss > 0 {
 		e.mu.Lock()
@@ -252,29 +278,47 @@ func (e *paperTradeExecutor) placeBuy(ctx context.Context, result bullarc.Analys
 
 // closePosition closes an existing paper trading position.
 func (e *paperTradeExecutor) closePosition(ctx context.Context, symbol string, composite bullarc.Signal) {
-	result, err := e.trader.ClosePosition(ctx, symbol)
+	sellResult, err := e.trader.ClosePosition(ctx, symbol)
 	if err != nil {
 		slog.Warn(paperTradingBanner+" failed to close position",
 			"symbol", symbol, "err", err)
 		return
 	}
 
-	direction := "SELL"
 	if composite.Type == bullarc.SignalSell {
 		fmt.Printf("%s SELL %-8s qty=%.4f price=%.2f confidence=%.1f%% id=%s\n",
-			paperTradingBanner, symbol, result.Qty, result.FilledPrice,
-			composite.Confidence, result.OrderID)
+			paperTradingBanner, symbol, sellResult.Qty, sellResult.FilledPrice,
+			composite.Confidence, sellResult.OrderID)
 	} else {
 		fmt.Printf("%s STOP %-8s qty=%.4f price=%.2f (stop-loss triggered) id=%s\n",
-			paperTradingBanner, symbol, result.Qty, result.FilledPrice, result.OrderID)
-		direction = "STOP"
+			paperTradingBanner, symbol, sellResult.Qty, sellResult.FilledPrice, sellResult.OrderID)
 	}
-	_ = direction
 
-	// Remove the stop-loss entry for this position.
+	// Retrieve and clear entry tracking data.
 	e.mu.Lock()
+	buyResult, hasBuyResult := e.entryOrders[symbol]
+	entrySignal := e.entrySignals[symbol]
+	entryInds := e.entryIndicators[symbol]
 	delete(e.stopLosses, symbol)
+	delete(e.entryOrders, symbol)
+	delete(e.entrySignals, symbol)
+	delete(e.entryIndicators, symbol)
 	e.mu.Unlock()
+
+	// Log journal entry when we have a matching buy order.
+	if hasBuyResult && e.journal != nil {
+		entry := journal.NewEntry(buyResult, sellResult, entrySignal, composite, entryInds, nil)
+		if logErr := e.journal.Log(entry); logErr != nil {
+			slog.Warn(paperTradingBanner+" failed to log journal entry",
+				"symbol", symbol, "err", logErr)
+		} else {
+			slog.Info(paperTradingBanner+" journal entry logged",
+				"symbol", symbol,
+				"pnl", entry.PnL,
+				"pnl_pct", entry.PnLPct,
+				"holding_period", entry.HoldingPeriod)
+		}
+	}
 }
 
 // calculateQty derives the order quantity from the risk metrics position size
@@ -312,6 +356,21 @@ func (e *paperTradeExecutor) calculateQty(ctx context.Context, result bullarc.An
 		qty = 0.0001
 	}
 	return qty
+}
+
+// copyIndicatorValues makes a shallow copy of the indicator values map so that
+// the journal entry captures the state at entry time without sharing slices.
+func copyIndicatorValues(src map[string][]bullarc.IndicatorValue) map[string][]bullarc.IndicatorValue {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string][]bullarc.IndicatorValue, len(src))
+	for k, v := range src {
+		cp := make([]bullarc.IndicatorValue, len(v))
+		copy(cp, v)
+		dst[k] = cp
+	}
+	return dst
 }
 
 // latestClosePrice extracts the most recent close price from indicator values.
