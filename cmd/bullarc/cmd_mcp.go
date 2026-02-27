@@ -37,6 +37,6 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	srv := mcp.New("bullarc", "0.1.0")
 	mcp.RegisterTools(srv, e)
 
-	slog.Info("mcp: server started", "transport", "stdio", "tools", 2)
+	slog.Info("mcp: server started", "transport", "stdio", "tools", 4)
 	return srv.Serve(cmd.Context())
 }

@@ -131,6 +131,10 @@ func (s *Server) dispatch(ctx context.Context, data []byte) {
 		} else {
 			s.writeOK(id, result)
 		}
+	case "resources/list":
+		s.writeOK(id, map[string]any{"resources": []any{}})
+	case "prompts/list":
+		s.writeOK(id, map[string]any{"prompts": []any{}})
 	default:
 		s.writeErr(id, -32601, "method not found: "+msg.Method)
 	}
