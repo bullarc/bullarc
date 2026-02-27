@@ -28,13 +28,10 @@ func isTTY(w io.Writer) bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-// colorSignal returns the signal type as a bold, color-coded string when w is a
-// terminal, or as plain text otherwise. BUY is green, SELL is red, HOLD is yellow.
-func colorSignal(w io.Writer, sig bullarc.SignalType) string {
+// applyColor wraps the signal type in bold ANSI color codes.
+// BUY is green, SELL is red, HOLD is yellow.
+func applyColor(sig bullarc.SignalType) string {
 	s := string(sig)
-	if !isTTY(w) {
-		return s
-	}
 	switch sig {
 	case bullarc.SignalBuy:
 		return ansiBold + ansiGreen + s + ansiReset
@@ -43,4 +40,13 @@ func colorSignal(w io.Writer, sig bullarc.SignalType) string {
 	default: // SignalHold
 		return ansiBold + ansiYellow + s + ansiReset
 	}
+}
+
+// colorSignal returns the signal type as a bold, color-coded string when w is a
+// terminal, or as plain text otherwise. BUY is green, SELL is red, HOLD is yellow.
+func colorSignal(w io.Writer, sig bullarc.SignalType) string {
+	if !isTTY(w) {
+		return string(sig)
+	}
+	return applyColor(sig)
 }
