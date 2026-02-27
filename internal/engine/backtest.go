@@ -8,6 +8,7 @@ import (
 
 	"github.com/bullarc/bullarc"
 	"github.com/bullarc/bullarc/internal/datasource"
+	"github.com/bullarc/bullarc/internal/llm"
 	"github.com/bullarc/bullarc/internal/signal"
 )
 
@@ -102,6 +103,35 @@ func (e *Engine) BacktestCSV(ctx context.Context, csvPath, symbol string, indica
 		Bars:       bars,
 		Indicators: indicators,
 	})
+}
+
+// ExplainBacktestCSV loads all bars from a CSV file, runs Backtest, and optionally
+// generates an AI-powered explanation of the results using the configured LLM provider.
+// If no LLM provider is registered, the raw backtest result is returned with LLMAnalysis empty.
+func (e *Engine) ExplainBacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error) {
+	result, err := e.BacktestCSV(ctx, csvPath, symbol, indicators)
+	if err != nil {
+		return result, err
+	}
+
+	e.mu.RLock()
+	provider := e.llmProvider
+	e.mu.RUnlock()
+
+	if provider == nil {
+		return result, nil
+	}
+
+	prompt := llm.BacktestPrompt(result)
+	resp, llmErr := provider.Complete(ctx, bullarc.LLMRequest{Prompt: prompt, MaxTokens: 768})
+	if llmErr != nil {
+		slog.Warn("llm backtest explanation failed", "symbol", result.Symbol, "err", llmErr)
+		return result, nil
+	}
+	slog.Info("llm backtest explanation generated",
+		"symbol", result.Symbol, "tokens", resp.TokensUsed, "model", resp.Model)
+	result.LLMAnalysis = resp.Text
+	return result, nil
 }
 
 // ListIndicators returns metadata for all indicators currently registered with the engine.
