@@ -217,6 +217,49 @@ type WhaleAlertSource interface {
 	FetchWhaleAlerts(ctx context.Context, symbol string, since time.Time) ([]WhaleTransaction, error)
 }
 
+// OptionsActivityType classifies the kind of unusual options activity detected.
+type OptionsActivityType string
+
+const (
+	// OptionsActivitySweep indicates an aggressive order that is both large in premium
+	// and exceeds normal volume relative to open interest (sweep-like behaviour).
+	OptionsActivitySweep OptionsActivityType = "sweep"
+	// OptionsActivityBlock indicates a single large-premium trade (block trade).
+	OptionsActivityBlock OptionsActivityType = "block"
+	// OptionsActivityUnusualVolume indicates a strike whose volume far exceeds its open interest.
+	OptionsActivityUnusualVolume OptionsActivityType = "unusual_volume"
+)
+
+// OptionsActivity represents a single unusual options activity event on a specific contract.
+type OptionsActivity struct {
+	Symbol       string              `json:"symbol"`
+	Strike       float64             `json:"strike"`
+	Expiration   time.Time           `json:"expiration"`
+	Direction    string              `json:"direction"` // "call" or "put"
+	Volume       int64               `json:"volume"`
+	OpenInterest int64               `json:"open_interest"`
+	Premium      float64             `json:"premium"` // total premium in USD
+	ActivityType OptionsActivityType `json:"activity_type"`
+}
+
+// OptionsConfig holds parameters controlling unusual options activity detection.
+type OptionsConfig struct {
+	// PremiumThreshold is the minimum total contract premium (USD) to flag as a block trade.
+	// Defaults to 100_000 when zero.
+	PremiumThreshold float64 `json:"premium_threshold"`
+	// HistoricalPCRatios holds the recent put/call ratio history (one entry per day).
+	// When at least 2 entries are provided, deviations of more than 1.5 standard
+	// deviations from the mean trigger additional flagging of dominant-direction contracts.
+	HistoricalPCRatios []float64 `json:"historical_pc_ratios,omitempty"`
+}
+
+// OptionsSource fetches options chain data and detects unusual activity events.
+// Crypto symbols are silently skipped; implementations return ErrNotConfigured
+// when the underlying API key is absent.
+type OptionsSource interface {
+	FetchOptionsActivity(ctx context.Context, symbol string, cfg OptionsConfig) ([]OptionsActivity, error)
+}
+
 // Sentinel errors.
 var (
 	ErrInsufficientData      = &Error{Code: "INSUFFICIENT_DATA", Message: "not enough data bars for computation"}
