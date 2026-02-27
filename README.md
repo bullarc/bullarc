@@ -75,6 +75,39 @@ for indicators that produce multiple outputs (e.g., MACD produces `macd`,
 `Signal` carries a `Confidence` float (0.0–1.0), the indicator that produced it,
 and an `Explanation` string populated when LLM analysis is enabled.
 
+## Docker
+
+Run the CLI with a single command — no Go installation or local setup required:
+
+```bash
+docker run --rm \
+  -e ALPACA_API_KEY=<key-id> \
+  -e ALPACA_SECRET_KEY=<secret> \
+  ghcr.io/bullarc/bullarc:latest watch -s AAPL
+```
+
+To include LLM analysis, add `ANTHROPIC_API_KEY`:
+
+```bash
+docker run --rm \
+  -e ALPACA_API_KEY=<key-id> \
+  -e ALPACA_SECRET_KEY=<secret> \
+  -e ANTHROPIC_API_KEY=<anthropic-key> \
+  ghcr.io/bullarc/bullarc:latest analyze --symbol AAPL --llm
+```
+
+**Building the image locally:**
+
+```bash
+make docker-build                     # builds bullarc:latest
+docker build -t bullarc:dev .         # equivalent one-liner
+```
+
+**Image size:** The multi-stage build produces an Alpine-based image.
+Target size: under 50 MB (typical: ~20–25 MB — Go binary ≈ 14 MB, Alpine base ≈ 8 MB).
+
+The image bundles all dependencies. No host-level Go installation is needed.
+
 ## Requirements
 
 - Go 1.22+
