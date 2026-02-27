@@ -18,6 +18,7 @@ type Config struct {
 	Webhooks     WebhookConfig      `json:"webhooks" yaml:"webhooks"`
 	Social       SocialConfig       `json:"social" yaml:"social"`
 	PaperTrading PaperTradingConfig `json:"paper_trading" yaml:"paper_trading"`
+	Journal      JournalConfig      `json:"journal" yaml:"journal"`
 }
 
 // EngineConfig configures the analysis engine.
@@ -95,6 +96,13 @@ type PaperTradingConfig struct {
 	BaseURL             string  `json:"base_url" yaml:"base_url"`
 	AutoExecute         bool    `json:"auto_execute" yaml:"auto_execute"`
 	ConfidenceThreshold float64 `json:"confidence_threshold" yaml:"confidence_threshold"` // default: 70
+}
+
+// JournalConfig configures the trade journal storage.
+type JournalConfig struct {
+	// Path is the file path where journal entries are stored in JSON format.
+	// Defaults to "journal.json" in the current directory when empty.
+	Path string `json:"path" yaml:"path"`
 }
 
 // Load reads a YAML (or JSON) config file at path and returns the parsed Config.
