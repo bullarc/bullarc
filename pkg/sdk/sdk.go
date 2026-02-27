@@ -58,11 +58,13 @@ func (c *Client) Configure(opts ...Option) error {
 
 	// Apply to a draft copy so we can roll back on error.
 	draft := ClientConfig{
-		Symbols:     cloneStrings(c.cfg.Symbols),
-		Indicators:  cloneStrings(c.cfg.Indicators),
-		Interval:    c.cfg.Interval,
-		DataSource:  c.cfg.DataSource,
-		LLMProvider: c.cfg.LLMProvider,
+		Symbols:         cloneStrings(c.cfg.Symbols),
+		Indicators:      cloneStrings(c.cfg.Indicators),
+		Interval:        c.cfg.Interval,
+		DataSource:      c.cfg.DataSource,
+		DataSourceName:  c.cfg.DataSourceName,
+		LLMProvider:     c.cfg.LLMProvider,
+		LLMProviderName: c.cfg.LLMProviderName,
 	}
 	for _, opt := range opts {
 		if err := opt(&draft); err != nil {
@@ -79,11 +81,13 @@ func (c *Client) Config() ClientConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return ClientConfig{
-		Symbols:     cloneStrings(c.cfg.Symbols),
-		Indicators:  cloneStrings(c.cfg.Indicators),
-		Interval:    c.cfg.Interval,
-		DataSource:  c.cfg.DataSource,
-		LLMProvider: c.cfg.LLMProvider,
+		Symbols:         cloneStrings(c.cfg.Symbols),
+		Indicators:      cloneStrings(c.cfg.Indicators),
+		Interval:        c.cfg.Interval,
+		DataSource:      c.cfg.DataSource,
+		DataSourceName:  c.cfg.DataSourceName,
+		LLMProvider:     c.cfg.LLMProvider,
+		LLMProviderName: c.cfg.LLMProviderName,
 	}
 }
 

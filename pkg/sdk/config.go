@@ -41,9 +41,17 @@ type ClientConfig struct {
 	// Nil means the engine's own registered data sources are used.
 	DataSource bullarc.DataSource
 
+	// DataSourceName identifies a named data source type (e.g. "alpaca") set via
+	// WithAlpacaDataSource. Empty when DataSource was set via WithDataSource.
+	DataSourceName string
+
 	// LLMProvider is the custom LLM provider to use for generating explanations.
 	// Nil means no LLM explanations are generated.
 	LLMProvider bullarc.LLMProvider
+
+	// LLMProviderName identifies a named LLM provider type (e.g. "anthropic") set via
+	// WithAnthropicProvider. Empty when LLMProvider was set via WithLLMProvider.
+	LLMProviderName string
 }
 
 // Option configures a Client at construction time or at runtime via Configure.
@@ -91,11 +99,17 @@ func WithIndicators(indicators ...string) Option {
 
 // WithDataSource sets a custom data source adapter. The engine will use this
 // source instead of any previously registered data source. ds must not be nil.
+// Returns an error if a named data source (e.g. Alpaca) is already configured.
 func WithDataSource(ds bullarc.DataSource) Option {
 	return func(cfg *ClientConfig) error {
 		if ds == nil {
 			return bullarc.ErrInvalidParameter.Wrap(
 				fmt.Errorf("data source must not be nil"),
+			)
+		}
+		if cfg.DataSourceName != "" {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("conflicting data source: %q data source already configured; use only one of WithDataSource or WithAlpacaDataSource", cfg.DataSourceName),
 			)
 		}
 		cfg.DataSource = ds
@@ -105,7 +119,7 @@ func WithDataSource(ds bullarc.DataSource) Option {
 
 // WithLLMProvider sets a custom LLM provider adapter. The engine will use this
 // provider for generating explanations when UseLLM is enabled in analysis requests.
-// p must not be nil.
+// p must not be nil. Returns an error if a named provider (e.g. Anthropic) is already configured.
 func WithLLMProvider(p bullarc.LLMProvider) Option {
 	return func(cfg *ClientConfig) error {
 		if p == nil {
@@ -113,7 +127,54 @@ func WithLLMProvider(p bullarc.LLMProvider) Option {
 				fmt.Errorf("LLM provider must not be nil"),
 			)
 		}
+		if cfg.LLMProviderName != "" {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("conflicting LLM provider: %q provider already configured; use only one of WithLLMProvider or WithAnthropicProvider", cfg.LLMProviderName),
+			)
+		}
 		cfg.LLMProvider = p
+		return nil
+	}
+}
+
+// WithAlpacaDataSource configures an Alpaca Markets data source with the given credentials.
+// keyID must not be empty. Returns an error if a custom data source was already set via
+// WithDataSource, as that would create a conflicting configuration.
+func WithAlpacaDataSource(keyID, secretKey string) Option {
+	return func(cfg *ClientConfig) error {
+		if keyID == "" {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("Alpaca key ID must not be empty"),
+			)
+		}
+		if cfg.DataSource != nil && cfg.DataSourceName == "" {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("conflicting data source: a custom data source is already configured; use only one of WithDataSource or WithAlpacaDataSource"),
+			)
+		}
+		cfg.DataSource = engine.NewAlpacaDataSource(keyID, secretKey)
+		cfg.DataSourceName = "alpaca"
+		return nil
+	}
+}
+
+// WithAnthropicProvider configures an Anthropic LLM provider with the given API key.
+// apiKey must not be empty. If model is empty the default model is used.
+// Returns an error if a custom LLM provider was already set via WithLLMProvider.
+func WithAnthropicProvider(apiKey, model string) Option {
+	return func(cfg *ClientConfig) error {
+		if apiKey == "" {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("Anthropic API key must not be empty"),
+			)
+		}
+		if cfg.LLMProvider != nil && cfg.LLMProviderName == "" {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("conflicting LLM provider: a custom LLM provider is already configured; use only one of WithLLMProvider or WithAnthropicProvider"),
+			)
+		}
+		cfg.LLMProvider = engine.NewAnthropicProvider(apiKey, model)
+		cfg.LLMProviderName = "anthropic"
 		return nil
 	}
 }
