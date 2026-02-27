@@ -12,12 +12,14 @@ import (
 // Backend provides the capabilities exposed through MCP tools.
 // The concrete *engine.Engine satisfies this interface.
 type Backend interface {
+	Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
 	BacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
 	ListIndicators() []bullarc.IndicatorMeta
 }
 
-// RegisterTools adds the backtest_strategy and list_indicators tools to srv.
+// RegisterTools adds the get_signals, backtest_strategy and list_indicators tools to srv.
 func RegisterTools(srv *Server, b Backend) {
+	srv.AddTool(getSignalsTool(b))
 	srv.AddTool(backTestStrategyTool(b))
 	srv.AddTool(listIndicatorsTool(b))
 }
@@ -109,6 +111,86 @@ type backtestOutput struct {
 	SimReturn    float64 `json:"sim_return_pct"`
 	MaxDrawdown  float64 `json:"max_drawdown_pct"`
 	WinRate      float64 `json:"win_rate_pct"`
+}
+
+// getSignalsTool builds the get_signals MCP tool.
+// It runs a live analysis for each requested symbol and returns the composite
+// trading signal, confidence score, and timestamp.
+func getSignalsTool(b Backend) Tool {
+	return Tool{
+		Name: "get_signals",
+		Description: "Analyze one or more ticker symbols using registered indicators and return " +
+			"the current composite trading signal (BUY, SELL, or HOLD), confidence score, " +
+			"and timestamp for each symbol.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"symbols": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "One or more ticker symbols to analyze (e.g. [\"AAPL\", \"TSLA\"]).",
+					"minItems":    1,
+				},
+			},
+			"required": []string{"symbols"},
+		},
+		Handler: func(ctx context.Context, args map[string]any) (string, error) {
+			raw, ok := args["symbols"].([]any)
+			if !ok || len(raw) == 0 {
+				return "", fmt.Errorf("symbols is required and must be a non-empty array")
+			}
+
+			var symbols []string
+			for _, v := range raw {
+				s, ok := v.(string)
+				if !ok || s == "" {
+					return "", fmt.Errorf("each symbol must be a non-empty string")
+				}
+				symbols = append(symbols, s)
+			}
+
+			results := make([]signalOutput, 0, len(symbols))
+			for _, sym := range symbols {
+				out := signalOutput{Symbol: sym}
+
+				result, err := b.Analyze(ctx, bullarc.AnalysisRequest{Symbol: sym})
+				if err != nil {
+					out.Error = err.Error()
+					results = append(results, out)
+					continue
+				}
+
+				if len(result.Signals) == 0 {
+					out.Error = fmt.Sprintf("no signals produced for %s (insufficient data or no data source)", sym)
+					results = append(results, out)
+					continue
+				}
+
+				composite := result.Signals[0]
+				out.Signal = string(composite.Type)
+				out.Confidence = composite.Confidence
+				out.Timestamp = result.Timestamp.Format(time.RFC3339)
+				out.Explanation = composite.Explanation
+				results = append(results, out)
+			}
+
+			data, err := json.MarshalIndent(results, "", "  ")
+			if err != nil {
+				return "", fmt.Errorf("marshal results: %w", err)
+			}
+			return string(data), nil
+		},
+	}
+}
+
+// signalOutput is the JSON shape for a single symbol result returned by get_signals.
+type signalOutput struct {
+	Symbol      string  `json:"symbol"`
+	Signal      string  `json:"signal,omitempty"`
+	Confidence  float64 `json:"confidence,omitempty"`
+	Timestamp   string  `json:"timestamp,omitempty"`
+	Explanation string  `json:"explanation,omitempty"`
+	Error       string  `json:"error,omitempty"`
 }
 
 // listIndicatorsTool builds the list_indicators MCP tool.
