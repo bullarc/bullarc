@@ -108,8 +108,8 @@ func errNoDataSource() error {
 
 // buildEngine constructs an Engine from an optional config file, optional CSV data source,
 // and optional API key overrides. Key resolution order:
-//   - Alpaca: alpacaKeyID flag > ALPACA_API_KEY env var > config file (when Enabled)
-//   - LLM: llmKey flag > config file > ANTHROPIC_API_KEY env var
+//   - Alpaca: alpacaKeyID flag > ALPACA_API_KEY env var > keystore > config file (when Enabled)
+//   - LLM: llmKey flag > ANTHROPIC_API_KEY env var > keystore > config file
 func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) (*engine.Engine, error) {
 	var (
 		e         *engine.Engine
@@ -148,7 +148,13 @@ func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) 
 		e.RegisterDataSource(datasource.NewCSVSource(csvPath))
 	}
 
-	// Resolve Alpaca credentials: flag > env var > config file (when Enabled).
+	// Load persistent credentials (best-effort; errors are silently ignored).
+	var keystoreCreds config.Credentials
+	if ksPath, err := config.DefaultKeystorePath(); err == nil {
+		keystoreCreds, _ = config.LoadCredentials(ksPath)
+	}
+
+	// Resolve Alpaca credentials: flag > env var > keystore > config file (when Enabled).
 	effectiveAlpacaKeyID := alpacaKeyID
 	if effectiveAlpacaKeyID == "" {
 		effectiveAlpacaKeyID = os.Getenv("ALPACA_API_KEY")
@@ -156,6 +162,12 @@ func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) 
 	effectiveAlpacaSecretKey := alpacaSecretKey
 	if effectiveAlpacaSecretKey == "" {
 		effectiveAlpacaSecretKey = os.Getenv("ALPACA_SECRET_KEY")
+	}
+	if effectiveAlpacaKeyID == "" && keystoreCreds.AlpacaKeyID != "" {
+		effectiveAlpacaKeyID = keystoreCreds.AlpacaKeyID
+		if effectiveAlpacaSecretKey == "" {
+			effectiveAlpacaSecretKey = keystoreCreds.AlpacaSecretKey
+		}
 	}
 	var alpacaBaseURL string
 	if effectiveAlpacaKeyID == "" && cfgAlpaca.Enabled {
@@ -174,13 +186,16 @@ func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) 
 		e.RegisterDataSource(datasource.NewAlpacaSource(effectiveAlpacaKeyID, effectiveAlpacaSecretKey, opts...))
 	}
 
-	// Resolve LLM key: flag > config file > ANTHROPIC_API_KEY env var.
+	// Resolve LLM key: flag > ANTHROPIC_API_KEY env var > keystore > config file.
 	effectiveKey := llmKey
 	if effectiveKey == "" {
-		effectiveKey = cfgLLMKey
+		effectiveKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
 	if effectiveKey == "" {
-		effectiveKey = os.Getenv("ANTHROPIC_API_KEY")
+		effectiveKey = keystoreCreds.LLMAPIKey
+	}
+	if effectiveKey == "" {
+		effectiveKey = cfgLLMKey
 	}
 	if effectiveKey != "" {
 		e.RegisterLLMProvider(llm.NewAnthropicProvider(effectiveKey, llmModel))

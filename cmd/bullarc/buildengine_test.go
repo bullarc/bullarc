@@ -1,8 +1,11 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bullarc/bullarc/internal/config"
 )
 
 func TestBuildEngine_NoDataSource_ReturnsHelpfulError(t *testing.T) {
@@ -113,4 +116,72 @@ func TestBuildEngine_LLMKeyFromFlagOverridesEnv(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_ = e
+}
+
+func TestBuildEngine_LLMKeyFromKeystore(t *testing.T) {
+	t.Setenv("ALPACA_API_KEY", "")
+	t.Setenv("ALPACA_SECRET_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	ksPath := filepath.Join(tmpDir, "bullarc", "credentials")
+	err := config.SaveCredentials(ksPath, config.Credentials{LLMAPIKey: "keystore-llm-key"})
+	if err != nil {
+		t.Fatalf("save credentials: %v", err)
+	}
+
+	e, err := buildEngine("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = e
+}
+
+func TestBuildEngine_EnvVarOverridesKeystore(t *testing.T) {
+	t.Setenv("ALPACA_API_KEY", "")
+	t.Setenv("ALPACA_SECRET_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "env-llm-key")
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	ksPath := filepath.Join(tmpDir, "bullarc", "credentials")
+	err := config.SaveCredentials(ksPath, config.Credentials{LLMAPIKey: "keystore-llm-key"})
+	if err != nil {
+		t.Fatalf("save credentials: %v", err)
+	}
+
+	// The engine should still build; env var takes precedence over keystore.
+	e, err := buildEngine("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = e
+}
+
+func TestBuildEngine_AlpacaFromKeystore(t *testing.T) {
+	t.Setenv("ALPACA_API_KEY", "")
+	t.Setenv("ALPACA_SECRET_KEY", "")
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	ksPath := filepath.Join(tmpDir, "bullarc", "credentials")
+	err := config.SaveCredentials(ksPath, config.Credentials{
+		AlpacaKeyID:     "keystore-alpaca-key",
+		AlpacaSecretKey: "keystore-alpaca-secret",
+	})
+	if err != nil {
+		t.Fatalf("save credentials: %v", err)
+	}
+
+	e, err := buildEngine("", "", "", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !e.HasDataSource() {
+		t.Fatal("expected Alpaca data source registered from keystore")
+	}
 }
