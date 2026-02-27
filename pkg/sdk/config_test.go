@@ -492,3 +492,131 @@ func TestConfigure_InvalidDataSourceLeavesConfigUnchanged(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, before.DataSource, client.Config().DataSource, "data source must be unchanged after error")
 }
+
+// --- WithLLMProvider ---
+
+// trackingLLMProvider records whether its Complete method was called.
+type trackingLLMProvider struct {
+	name     string
+	response string
+	called   bool
+}
+
+func (p *trackingLLMProvider) Name() string { return p.name }
+
+func (p *trackingLLMProvider) Complete(_ context.Context, _ bullarc.LLMRequest) (bullarc.LLMResponse, error) {
+	p.called = true
+	return bullarc.LLMResponse{Text: p.response, Model: p.name}, nil
+}
+
+func TestWithLLMProvider_SetsLLMProvider(t *testing.T) {
+	llmp := &trackingLLMProvider{name: "stub-llm"}
+	e := engine.New()
+	client, err := sdk.NewWithOptions(e, sdk.WithLLMProvider(llmp))
+	require.NoError(t, err)
+	assert.Equal(t, llmp, client.Config().LLMProvider)
+}
+
+func TestWithLLMProvider_NilReturnsError(t *testing.T) {
+	e := engine.New()
+	_, err := sdk.NewWithOptions(e, sdk.WithLLMProvider(nil))
+	require.Error(t, err)
+	var bErr *bullarc.Error
+	require.True(t, errors.As(err, &bErr))
+	assert.Equal(t, "INVALID_PARAMETER", bErr.Code)
+}
+
+// TestWithLLMProvider_UsedForAnalysis verifies the engine uses the custom provider when UseLLM is true.
+func TestWithLLMProvider_UsedForAnalysis(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	ds := &trackingDataSource{bars: bars}
+	llmp := &trackingLLMProvider{name: "stub-llm", response: "bullish signal"}
+
+	e := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		e.RegisterIndicator(ind)
+	}
+
+	client, err := sdk.NewWithOptions(e,
+		sdk.WithDataSource(ds),
+		sdk.WithLLMProvider(llmp),
+	)
+	require.NoError(t, err)
+
+	result, err := client.Analyze(context.Background(), bullarc.AnalysisRequest{
+		Symbol: "AAPL",
+		UseLLM: true,
+	})
+	require.NoError(t, err)
+	assert.True(t, llmp.called, "expected custom LLM provider Complete to be called")
+	assert.Equal(t, "bullish signal", result.LLMAnalysis)
+}
+
+// TestWithLLMProvider_NoProviderDeliversSignals verifies that signals are returned without an LLM provider.
+func TestWithLLMProvider_NoProviderDeliversSignals(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	ds := &trackingDataSource{bars: bars}
+
+	e := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		e.RegisterIndicator(ind)
+	}
+
+	client, err := sdk.NewWithOptions(e, sdk.WithDataSource(ds))
+	require.NoError(t, err)
+
+	result, err := client.Analyze(context.Background(), bullarc.AnalysisRequest{
+		Symbol: "AAPL",
+		UseLLM: true,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Signals, "signals must be delivered even without an LLM provider")
+	assert.Empty(t, result.LLMAnalysis, "no LLM analysis without a provider")
+}
+
+// TestConfigure_SwapsLLMProviderAtRuntime verifies that Configure replaces the active LLM provider.
+func TestConfigure_SwapsLLMProviderAtRuntime(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	ds := &trackingDataSource{bars: bars}
+	llmp1 := &trackingLLMProvider{name: "provider-1", response: "response-1"}
+	llmp2 := &trackingLLMProvider{name: "provider-2", response: "response-2"}
+
+	e := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		e.RegisterIndicator(ind)
+	}
+
+	client, err := sdk.NewWithOptions(e,
+		sdk.WithDataSource(ds),
+		sdk.WithLLMProvider(llmp1),
+	)
+	require.NoError(t, err)
+
+	// Swap to llmp2 at runtime.
+	err = client.Configure(sdk.WithLLMProvider(llmp2))
+	require.NoError(t, err)
+	assert.Equal(t, llmp2, client.Config().LLMProvider)
+
+	result, err := client.Analyze(context.Background(), bullarc.AnalysisRequest{
+		Symbol: "AAPL",
+		UseLLM: true,
+	})
+	require.NoError(t, err)
+
+	assert.False(t, llmp1.called, "old LLM provider must not be called after swap")
+	assert.True(t, llmp2.called, "new LLM provider must be called after swap")
+	assert.Equal(t, "response-2", result.LLMAnalysis)
+}
+
+// TestConfigure_InvalidLLMProviderLeavesConfigUnchanged verifies rollback on nil LLM provider.
+func TestConfigure_InvalidLLMProviderLeavesConfigUnchanged(t *testing.T) {
+	llmp := &trackingLLMProvider{name: "stub-llm"}
+	e := engine.New()
+	client, err := sdk.NewWithOptions(e, sdk.WithLLMProvider(llmp))
+	require.NoError(t, err)
+	before := client.Config()
+
+	err = client.Configure(sdk.WithLLMProvider(nil))
+	require.Error(t, err)
+	assert.Equal(t, before.LLMProvider, client.Config().LLMProvider, "LLM provider must be unchanged after error")
+}
