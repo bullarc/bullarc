@@ -361,14 +361,28 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 // and aggregates them into a composite BUY/SELL/HOLD signal.
 // Analyze is safe for concurrent use by multiple goroutines.
 func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
+	snap := e.snapshot(req.Indicators)
+	return e.analyzeWithSnap(ctx, req, snap)
+}
+
+// AnalyzeDeep runs the full multi-step LLM analysis chain for symbol regardless
+// of the engine's global multiStepMode setting. It calls the three-step chain
+// (technical thesis → news thesis → synthesis) and stores the reasoning in
+// AnalysisResult.LLMAnalysis. An LLM provider must be registered; if none is
+// configured the result has no LLM analysis.
+func (e *Engine) AnalyzeDeep(ctx context.Context, symbol string) (bullarc.AnalysisResult, error) {
+	snap := e.snapshot(nil)
+	snap.multiStepMode = true
+	return e.analyzeWithSnap(ctx, bullarc.AnalysisRequest{Symbol: symbol, UseLLM: true}, snap)
+}
+
+// analyzeWithSnap runs the full analysis pipeline using the pre-built snapshot.
+// It is the shared implementation used by both Analyze and AnalyzeDeep.
+func (e *Engine) analyzeWithSnap(ctx context.Context, req bullarc.AnalysisRequest, snap engineSnapshot) (bullarc.AnalysisResult, error) {
 	slog.Info("analysis started",
 		"symbol", req.Symbol,
 		"indicators", req.Indicators,
 		"use_llm", req.UseLLM)
-
-	// Take a brief snapshot of engine state so that long-running I/O (data
-	// fetching, LLM calls) is performed without holding the lock.
-	snap := e.snapshot(req.Indicators)
 
 	result := bullarc.AnalysisResult{
 		Symbol:          req.Symbol,
