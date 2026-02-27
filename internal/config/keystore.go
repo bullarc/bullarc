@@ -15,11 +15,12 @@ const (
 	keystoreDirPerm = 0o700
 )
 
-// Credentials holds persistently stored API keys.
+// Credentials holds persistently stored API keys and preferences.
 type Credentials struct {
-	LLMAPIKey       string `json:"llm_api_key,omitempty"`
-	AlpacaKeyID     string `json:"alpaca_key_id,omitempty"`
-	AlpacaSecretKey string `json:"alpaca_secret_key,omitempty"`
+	LLMAPIKey       string   `json:"llm_api_key,omitempty"`
+	AlpacaKeyID     string   `json:"alpaca_key_id,omitempty"`
+	AlpacaSecretKey string   `json:"alpaca_secret_key,omitempty"`
+	Watchlist       []string `json:"watchlist,omitempty"`
 }
 
 // DefaultKeystorePath returns the default path for the credentials file.

@@ -88,3 +88,44 @@ func TestSaveCredentials_OverwritesExisting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new-key", out.LLMAPIKey)
 }
+
+func TestSaveAndLoadCredentials_WithWatchlist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials")
+
+	in := config.Credentials{
+		Watchlist: []string{"AAPL", "MSFT", "BTC/USD"},
+	}
+	require.NoError(t, config.SaveCredentials(path, in))
+
+	out, err := config.LoadCredentials(path)
+	require.NoError(t, err)
+	assert.Equal(t, in.Watchlist, out.Watchlist)
+}
+
+func TestCredentials_WatchlistPreservesOtherFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials")
+
+	in := config.Credentials{
+		LLMAPIKey:       "llm-key",
+		AlpacaKeyID:     "alpaca-id",
+		AlpacaSecretKey: "alpaca-secret",
+		Watchlist:       []string{"AAPL", "MSFT"},
+	}
+	require.NoError(t, config.SaveCredentials(path, in))
+
+	out, err := config.LoadCredentials(path)
+	require.NoError(t, err)
+	assert.Equal(t, in.LLMAPIKey, out.LLMAPIKey)
+	assert.Equal(t, in.AlpacaKeyID, out.AlpacaKeyID)
+	assert.Equal(t, in.AlpacaSecretKey, out.AlpacaSecretKey)
+	assert.Equal(t, in.Watchlist, out.Watchlist)
+}
+
+func TestLoadCredentials_EmptyWatchlistWhenAbsent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials")
+	require.NoError(t, config.SaveCredentials(path, config.Credentials{LLMAPIKey: "key"}))
+
+	out, err := config.LoadCredentials(path)
+	require.NoError(t, err)
+	assert.Empty(t, out.Watchlist)
+}
