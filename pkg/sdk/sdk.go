@@ -10,19 +10,73 @@ import (
 	"github.com/bullarc/bullarc"
 )
 
+// intervalEngine is satisfied by engines that expose a runtime interval setter.
+type intervalEngine interface {
+	SetInterval(string)
+}
+
 // Client is a high-level SDK client wrapping the bullarc engine.
 type Client struct {
 	engine bullarc.Engine
+	mu     sync.RWMutex
+	cfg    ClientConfig
 }
 
-// New creates a new SDK Client with the given engine.
+// New creates a new SDK Client with the given engine and default configuration.
 func New(engine bullarc.Engine) *Client {
 	return &Client{engine: engine}
 }
 
-// Analyze runs analysis for the given request through the underlying engine.
+// NewWithOptions creates a new SDK Client and applies the given options at
+// construction time. Returns a typed *bullarc.Error if any option is invalid.
+func NewWithOptions(eng bullarc.Engine, opts ...Option) (*Client, error) {
+	c := &Client{engine: eng}
+	for _, opt := range opts {
+		if err := opt(&c.cfg); err != nil {
+			return nil, err
+		}
+	}
+	c.propagateConfig()
+	return c, nil
+}
+
+// Configure applies options to the client at runtime, updating the active
+// configuration. On error the configuration is left unchanged.
+func (c *Client) Configure(opts ...Option) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Apply to a draft copy so we can roll back on error.
+	draft := ClientConfig{
+		Symbols:    cloneStrings(c.cfg.Symbols),
+		Indicators: cloneStrings(c.cfg.Indicators),
+		Interval:   c.cfg.Interval,
+	}
+	for _, opt := range opts {
+		if err := opt(&draft); err != nil {
+			return err
+		}
+	}
+	c.cfg = draft
+	c.propagateConfig()
+	return nil
+}
+
+// Config returns a snapshot of the current client configuration.
+func (c *Client) Config() ClientConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return ClientConfig{
+		Symbols:    cloneStrings(c.cfg.Symbols),
+		Indicators: cloneStrings(c.cfg.Indicators),
+		Interval:   c.cfg.Interval,
+	}
+}
+
+// Analyze runs analysis for the given request through the underlying engine,
+// applying configured defaults for missing symbol and indicators.
 func (c *Client) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
-	return c.engine.Analyze(ctx, req)
+	return c.engine.Analyze(ctx, c.applyConfigToReq(req))
 }
 
 // backtestEngine is satisfied by *engine.Engine when it has Backtest support.
@@ -50,10 +104,15 @@ type streamEngine interface {
 // when ctx is cancelled. If the underlying engine does not support streaming,
 // the channel is closed immediately.
 //
+// If req.Symbol is empty and the client has configured symbols, the first
+// configured symbol is used. If req.Indicators is empty and the client has
+// configured indicators, those are used.
+//
 // Signals within a single AnalysisResult are delivered in order; results from
 // successive polls are appended in arrival order. Each signal is delivered
 // exactly once.
 func (c *Client) Stream(ctx context.Context, req bullarc.AnalysisRequest, pollInterval time.Duration) <-chan bullarc.Signal {
+	req = c.applyConfigToReq(req)
 	ch := make(chan bullarc.Signal, 64)
 	go func() {
 		defer close(ch)
@@ -75,10 +134,16 @@ func (c *Client) Stream(ctx context.Context, req bullarc.AnalysisRequest, pollIn
 }
 
 // StreamSymbols polls the engine for each symbol at pollInterval and delivers
-// all resulting Signals to a single merged channel. Signals from different
+// all resulting Signals to a single merged channel. If symbols is nil or empty
+// and the client has configured symbols, those are used. Signals from different
 // symbols are interleaved in arrival order. The channel is closed once all
 // per-symbol goroutines have exited (ctx cancelled).
 func (c *Client) StreamSymbols(ctx context.Context, symbols []string, pollInterval time.Duration) <-chan bullarc.Signal {
+	if len(symbols) == 0 {
+		c.mu.RLock()
+		symbols = cloneStrings(c.cfg.Symbols)
+		c.mu.RUnlock()
+	}
 	ch := make(chan bullarc.Signal, 64)
 	var wg sync.WaitGroup
 	for _, sym := range symbols {
@@ -100,4 +165,44 @@ func (c *Client) StreamSymbols(ctx context.Context, symbols []string, pollInterv
 		close(ch)
 	}()
 	return ch
+}
+
+// applyConfigToReq returns req enriched with client-level defaults.
+// Symbol and Indicators from cfg are applied only when the request's own
+// fields are zero/empty.
+func (c *Client) applyConfigToReq(req bullarc.AnalysisRequest) bullarc.AnalysisRequest {
+	c.mu.RLock()
+	cfg := ClientConfig{
+		Symbols:    cloneStrings(c.cfg.Symbols),
+		Indicators: cloneStrings(c.cfg.Indicators),
+		Interval:   c.cfg.Interval,
+	}
+	c.mu.RUnlock()
+
+	if req.Symbol == "" && len(cfg.Symbols) > 0 {
+		req.Symbol = cfg.Symbols[0]
+	}
+	if len(req.Indicators) == 0 && len(cfg.Indicators) > 0 {
+		req.Indicators = cfg.Indicators
+	}
+	return req
+}
+
+// propagateConfig pushes configuration to the underlying engine where possible.
+// Must be called while c.mu is held for writing (or during construction).
+func (c *Client) propagateConfig() {
+	if c.cfg.Interval != "" {
+		if ie, ok := c.engine.(intervalEngine); ok {
+			ie.SetInterval(c.cfg.Interval)
+		}
+	}
+}
+
+func cloneStrings(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, len(s))
+	copy(out, s)
+	return out
 }
