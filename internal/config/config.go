@@ -10,13 +10,14 @@ import (
 
 // Config is the top-level application configuration.
 type Config struct {
-	Engine      EngineConfig      `json:"engine" yaml:"engine"`
-	DataSources DataSourcesConfig `json:"data_sources" yaml:"data_sources"`
-	Indicators  IndicatorsConfig  `json:"indicators" yaml:"indicators"`
-	LLM         LLMConfig         `json:"llm" yaml:"llm"`
-	MCP         MCPConfig         `json:"mcp" yaml:"mcp"`
-	Webhooks    WebhookConfig     `json:"webhooks" yaml:"webhooks"`
-	Social      SocialConfig      `json:"social" yaml:"social"`
+	Engine       EngineConfig       `json:"engine" yaml:"engine"`
+	DataSources  DataSourcesConfig  `json:"data_sources" yaml:"data_sources"`
+	Indicators   IndicatorsConfig   `json:"indicators" yaml:"indicators"`
+	LLM          LLMConfig          `json:"llm" yaml:"llm"`
+	MCP          MCPConfig          `json:"mcp" yaml:"mcp"`
+	Webhooks     WebhookConfig      `json:"webhooks" yaml:"webhooks"`
+	Social       SocialConfig       `json:"social" yaml:"social"`
+	PaperTrading PaperTradingConfig `json:"paper_trading" yaml:"paper_trading"`
 }
 
 // EngineConfig configures the analysis engine.
@@ -84,6 +85,16 @@ type SocialConfig struct {
 	Provider       string        `json:"provider" yaml:"provider"`               // "tradestie" (default) or "apewisdom"
 	PollInterval   time.Duration `json:"poll_interval" yaml:"poll_interval"`     // default: 15 minutes
 	SpikeThreshold float64       `json:"spike_threshold" yaml:"spike_threshold"` // default: 3.0
+}
+
+// PaperTradingConfig configures Alpaca paper trading mode.
+type PaperTradingConfig struct {
+	Enabled             bool    `json:"enabled" yaml:"enabled"`
+	KeyID               string  `json:"key_id" yaml:"key_id"`
+	SecretKey           string  `json:"secret_key" yaml:"secret_key"`
+	BaseURL             string  `json:"base_url" yaml:"base_url"`
+	AutoExecute         bool    `json:"auto_execute" yaml:"auto_execute"`
+	ConfidenceThreshold float64 `json:"confidence_threshold" yaml:"confidence_threshold"` // default: 70
 }
 
 // Load reads a YAML (or JSON) config file at path and returns the parsed Config.
