@@ -368,3 +368,127 @@ func TestConfigure_IntervalPropagatedToEngine(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "1Day", client.Config().Interval)
 }
+
+// --- WithDataSource ---
+
+// trackingDataSource records whether its Fetch method was called.
+type trackingDataSource struct {
+	bars   []bullarc.OHLCV
+	called bool
+}
+
+func (t *trackingDataSource) Meta() bullarc.DataSourceMeta {
+	return bullarc.DataSourceMeta{Name: "tracking", Description: "tracks fetch calls"}
+}
+
+func (t *trackingDataSource) Fetch(_ context.Context, _ bullarc.DataQuery) ([]bullarc.OHLCV, error) {
+	t.called = true
+	return t.bars, nil
+}
+
+func TestWithDataSource_SetsDataSource(t *testing.T) {
+	ds := &trackingDataSource{}
+	e := engine.New()
+	client, err := sdk.NewWithOptions(e, sdk.WithDataSource(ds))
+	require.NoError(t, err)
+	assert.Equal(t, ds, client.Config().DataSource)
+}
+
+func TestWithDataSource_NilReturnsError(t *testing.T) {
+	e := engine.New()
+	_, err := sdk.NewWithOptions(e, sdk.WithDataSource(nil))
+	require.Error(t, err)
+	var bErr *bullarc.Error
+	require.True(t, errors.As(err, &bErr))
+	assert.Equal(t, "INVALID_PARAMETER", bErr.Code)
+}
+
+// TestWithDataSource_UsedForAnalysis verifies the engine uses the swapped-in data source.
+func TestWithDataSource_UsedForAnalysis(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	ds := &trackingDataSource{bars: bars}
+
+	e := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		e.RegisterIndicator(ind)
+	}
+
+	client, err := sdk.NewWithOptions(e, sdk.WithDataSource(ds))
+	require.NoError(t, err)
+
+	result, err := client.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err)
+	assert.True(t, ds.called, "expected custom data source Fetch to be called")
+	assert.NotEmpty(t, result.Signals, "expected signals from analysis with custom data source")
+}
+
+// TestWithDataSource_IndicatorsAndSignalsFunctionIdentically verifies that analysis
+// with a custom data source produces the same signal structure as with a directly
+// registered source.
+func TestWithDataSource_IndicatorsAndSignalsFunctionIdentically(t *testing.T) {
+	bars := testutil.LoadBarsFromCSV(t, "ohlcv_100.csv")
+
+	// Build a reference client using the traditional RegisterDataSource path.
+	eRef := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		eRef.RegisterIndicator(ind)
+	}
+	eRef.RegisterDataSource(&trackingDataSource{bars: bars})
+	refResult, err := sdk.New(eRef).Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "TEST"})
+	require.NoError(t, err)
+
+	// Build a client using WithDataSource.
+	eSwap := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		eSwap.RegisterIndicator(ind)
+	}
+	client, err := sdk.NewWithOptions(eSwap, sdk.WithDataSource(&trackingDataSource{bars: bars}))
+	require.NoError(t, err)
+	swapResult, err := client.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "TEST"})
+	require.NoError(t, err)
+
+	assert.Len(t, swapResult.Signals, len(refResult.Signals),
+		"swapped data source should produce the same number of signals")
+	assert.Len(t, swapResult.IndicatorValues, len(refResult.IndicatorValues),
+		"swapped data source should produce the same number of indicator values")
+}
+
+// TestConfigure_SwapsDataSourceAtRuntime verifies that Configure replaces the active
+// data source and subsequent analysis uses only the new source.
+func TestConfigure_SwapsDataSourceAtRuntime(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	ds1 := &trackingDataSource{bars: bars}
+	ds2 := &trackingDataSource{bars: bars}
+
+	e := engine.New()
+	for _, ind := range engine.DefaultIndicators() {
+		e.RegisterIndicator(ind)
+	}
+
+	client, err := sdk.NewWithOptions(e, sdk.WithDataSource(ds1))
+	require.NoError(t, err)
+
+	// Swap to ds2 at runtime.
+	err = client.Configure(sdk.WithDataSource(ds2))
+	require.NoError(t, err)
+	assert.Equal(t, ds2, client.Config().DataSource)
+
+	_, err = client.Analyze(context.Background(), bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err)
+
+	assert.False(t, ds1.called, "old data source must not be called after swap")
+	assert.True(t, ds2.called, "new data source must be called after swap")
+}
+
+// TestConfigure_InvalidDataSourceLeavesConfigUnchanged verifies rollback on nil data source.
+func TestConfigure_InvalidDataSourceLeavesConfigUnchanged(t *testing.T) {
+	ds := &trackingDataSource{}
+	e := engine.New()
+	client, err := sdk.NewWithOptions(e, sdk.WithDataSource(ds))
+	require.NoError(t, err)
+	before := client.Config()
+
+	err = client.Configure(sdk.WithDataSource(nil))
+	require.Error(t, err)
+	assert.Equal(t, before.DataSource, client.Config().DataSource, "data source must be unchanged after error")
+}
