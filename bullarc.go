@@ -197,6 +197,26 @@ type ChainFlowSource interface {
 	FetchChainMetrics(ctx context.Context, symbols []string) ([]ChainMetrics, error)
 }
 
+// WhaleTransaction represents a large on-chain crypto transfer (>$1M) detected
+// by a whale monitoring service. FromType and ToType classify the endpoint as
+// "exchange", "wallet" (cold storage), or "unknown".
+type WhaleTransaction struct {
+	Amount     float64   `json:"amount"`
+	AmountUSD  float64   `json:"amount_usd"`
+	Symbol     string    `json:"symbol"`
+	FromEntity string    `json:"from_entity"`
+	FromType   string    `json:"from_type"`
+	ToEntity   string    `json:"to_entity"`
+	ToType     string    `json:"to_type"`
+	TxHash     string    `json:"tx_hash"`
+	Timestamp  time.Time `json:"timestamp"`
+}
+
+// WhaleAlertSource fetches large on-chain transactions for a crypto symbol.
+type WhaleAlertSource interface {
+	FetchWhaleAlerts(ctx context.Context, symbol string, since time.Time) ([]WhaleTransaction, error)
+}
+
 // Sentinel errors.
 var (
 	ErrInsufficientData      = &Error{Code: "INSUFFICIENT_DATA", Message: "not enough data bars for computation"}
