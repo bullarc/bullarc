@@ -30,6 +30,7 @@ func main() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configureCmd)
+	rootCmd.AddCommand(paperCmd)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		slog.Error("command failed", "err", err)
