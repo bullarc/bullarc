@@ -81,6 +81,16 @@ func (e *Engine) SetInterval(interval string) {
 	e.interval = interval
 }
 
+// SetDataSource replaces the primary data source used by the engine.
+// If no data sources are registered yet, the given source becomes the first.
+func (e *Engine) SetDataSource(ds bullarc.DataSource) {
+	if len(e.dataSources) == 0 {
+		e.dataSources = []bullarc.DataSource{ds}
+		return
+	}
+	e.dataSources[0] = ds
+}
+
 // RegisterWebhookDispatcher attaches a webhook dispatcher that receives each
 // AnalysisResult immediately after Analyze completes. Dispatch errors are
 // logged but do not affect the returned result.

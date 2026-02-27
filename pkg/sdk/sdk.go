@@ -15,6 +15,11 @@ type intervalEngine interface {
 	SetInterval(string)
 }
 
+// dataSourceSetter is satisfied by engines that support replacing their primary data source.
+type dataSourceSetter interface {
+	SetDataSource(ds bullarc.DataSource)
+}
+
 // Client is a high-level SDK client wrapping the bullarc engine.
 type Client struct {
 	engine bullarc.Engine
@@ -51,6 +56,7 @@ func (c *Client) Configure(opts ...Option) error {
 		Symbols:    cloneStrings(c.cfg.Symbols),
 		Indicators: cloneStrings(c.cfg.Indicators),
 		Interval:   c.cfg.Interval,
+		DataSource: c.cfg.DataSource,
 	}
 	for _, opt := range opts {
 		if err := opt(&draft); err != nil {
@@ -70,6 +76,7 @@ func (c *Client) Config() ClientConfig {
 		Symbols:    cloneStrings(c.cfg.Symbols),
 		Indicators: cloneStrings(c.cfg.Indicators),
 		Interval:   c.cfg.Interval,
+		DataSource: c.cfg.DataSource,
 	}
 }
 
@@ -194,6 +201,11 @@ func (c *Client) propagateConfig() {
 	if c.cfg.Interval != "" {
 		if ie, ok := c.engine.(intervalEngine); ok {
 			ie.SetInterval(c.cfg.Interval)
+		}
+	}
+	if c.cfg.DataSource != nil {
+		if ds, ok := c.engine.(dataSourceSetter); ok {
+			ds.SetDataSource(c.cfg.DataSource)
 		}
 	}
 }

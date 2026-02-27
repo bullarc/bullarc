@@ -36,6 +36,10 @@ type ClientConfig struct {
 	// Interval is the data bar interval (e.g. "1Day", "1Hour").
 	// Empty means the engine's own default is used.
 	Interval string
+
+	// DataSource is the custom data source to use instead of the engine default.
+	// Nil means the engine's own registered data sources are used.
+	DataSource bullarc.DataSource
 }
 
 // Option configures a Client at construction time or at runtime via Configure.
@@ -77,6 +81,20 @@ func WithIndicators(indicators ...string) Option {
 		}
 		cfg.Indicators = make([]string, len(indicators))
 		copy(cfg.Indicators, indicators)
+		return nil
+	}
+}
+
+// WithDataSource sets a custom data source adapter. The engine will use this
+// source instead of any previously registered data source. ds must not be nil.
+func WithDataSource(ds bullarc.DataSource) Option {
+	return func(cfg *ClientConfig) error {
+		if ds == nil {
+			return bullarc.ErrInvalidParameter.Wrap(
+				fmt.Errorf("data source must not be nil"),
+			)
+		}
+		cfg.DataSource = ds
 		return nil
 	}
 }
