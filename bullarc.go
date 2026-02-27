@@ -174,6 +174,29 @@ type SocialTracker interface {
 	FetchSocialMetrics(ctx context.Context, symbols []string) ([]SocialMetrics, error)
 }
 
+// FlowDirection indicates the direction of exchange net flow.
+type FlowDirection string
+
+const (
+	// FlowDirectionInflow means coins moved into exchanges (bearish pressure).
+	FlowDirectionInflow FlowDirection = "inflow"
+	// FlowDirectionOutflow means coins moved out of exchanges (accumulation/bullish).
+	FlowDirectionOutflow FlowDirection = "outflow"
+)
+
+// ChainMetrics contains on-chain exchange flow data for a crypto asset.
+type ChainMetrics struct {
+	Symbol        string        `json:"symbol"`
+	NetFlow       float64       `json:"net_flow"`
+	FlowDirection FlowDirection `json:"flow_direction"`
+	Timestamp     time.Time     `json:"timestamp"`
+}
+
+// ChainFlowSource fetches on-chain exchange flow metrics for crypto assets.
+type ChainFlowSource interface {
+	FetchChainMetrics(ctx context.Context, symbols []string) ([]ChainMetrics, error)
+}
+
 // Sentinel errors.
 var (
 	ErrInsufficientData      = &Error{Code: "INSUFFICIENT_DATA", Message: "not enough data bars for computation"}
@@ -183,6 +206,7 @@ var (
 	ErrSymbolNotFound        = &Error{Code: "SYMBOL_NOT_FOUND", Message: "symbol not found"}
 	ErrTimeout               = &Error{Code: "TIMEOUT", Message: "operation timed out"}
 	ErrRateLimitExceeded     = &Error{Code: "RATE_LIMIT_EXCEEDED", Message: "API rate limit exceeded"}
+	ErrNotConfigured         = &Error{Code: "NOT_CONFIGURED", Message: "provider is not configured"}
 )
 
 // Error is a structured error with a code and message.
