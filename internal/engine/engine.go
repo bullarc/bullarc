@@ -28,6 +28,9 @@ type Engine struct {
 	indicators        map[string]bullarc.Indicator
 	dataSources       []bullarc.DataSource
 	llmProvider       bullarc.LLMProvider
+	newsSource        bullarc.NewsSource
+	sentimentScorer   *llm.SentimentScorer
+	newsSentimentWeight float64
 	webhookDispatcher *webhook.Dispatcher
 	bus               signalBus
 	// lookback is the number of calendar days of history to request per analysis.
@@ -39,10 +42,11 @@ type Engine struct {
 // New creates a new Engine with default configuration.
 func New() *Engine {
 	return &Engine{
-		indicators: make(map[string]bullarc.Indicator),
-		bus:        signal.NewBus(),
-		lookback:   200,
-		interval:   "1Day",
+		indicators:          make(map[string]bullarc.Indicator),
+		bus:                 signal.NewBus(),
+		lookback:            200,
+		interval:            "1Day",
+		newsSentimentWeight: 1.0,
 	}
 }
 
@@ -102,6 +106,31 @@ func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 	e.llmProvider = llm
 }
 
+// RegisterNewsSource sets the news data source used for sentiment signals.
+func (e *Engine) RegisterNewsSource(ns bullarc.NewsSource) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.newsSource = ns
+}
+
+// RegisterSentimentScorer sets the LLM-backed scorer used to classify news
+// article headlines for the news sentiment signal.
+func (e *Engine) RegisterSentimentScorer(ss *llm.SentimentScorer) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sentimentScorer = ss
+}
+
+// SetNewsSentimentWeight sets the weight multiplier applied to the confidence
+// of the news sentiment signal before it participates in aggregation.
+// A value of 1.0 (the default) gives the news signal equal weight to one
+// technical indicator vote. Values > 1.0 amplify it; < 1.0 reduce it.
+func (e *Engine) SetNewsSentimentWeight(w float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.newsSentimentWeight = w
+}
+
 // SetInterval updates the data interval used when fetching bars.
 func (e *Engine) SetInterval(interval string) {
 	e.mu.Lock()
@@ -155,12 +184,15 @@ func (e *Engine) Subscribe(ctx context.Context, symbol string) <-chan bullarc.Si
 // engineSnapshot holds a point-in-time copy of the engine's mutable fields.
 // It is used by Analyze to avoid holding the lock during I/O operations.
 type engineSnapshot struct {
-	indicators        []bullarc.Indicator
-	primaryDS         bullarc.DataSource
-	llmProvider       bullarc.LLMProvider
-	webhookDispatcher *webhook.Dispatcher
-	lookback          int
-	interval          string
+	indicators          []bullarc.Indicator
+	primaryDS           bullarc.DataSource
+	llmProvider         bullarc.LLMProvider
+	newsSource          bullarc.NewsSource
+	sentimentScorer     *llm.SentimentScorer
+	newsSentimentWeight float64
+	webhookDispatcher   *webhook.Dispatcher
+	lookback            int
+	interval            string
 }
 
 // snapshot takes a brief read lock and captures the current engine state.
@@ -169,11 +201,14 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 	defer e.mu.RUnlock()
 
 	snap := engineSnapshot{
-		indicators: e.selectIndicatorsLocked(indicatorNames),
-		llmProvider:       e.llmProvider,
-		webhookDispatcher: e.webhookDispatcher,
-		lookback:          e.lookback,
-		interval:          e.interval,
+		indicators:          e.selectIndicatorsLocked(indicatorNames),
+		llmProvider:         e.llmProvider,
+		newsSource:          e.newsSource,
+		sentimentScorer:     e.sentimentScorer,
+		newsSentimentWeight: e.newsSentimentWeight,
+		webhookDispatcher:   e.webhookDispatcher,
+		lookback:            e.lookback,
+		interval:            e.interval,
 	}
 	if len(e.dataSources) > 0 {
 		snap.primaryDS = e.dataSources[0]
@@ -231,6 +266,12 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		}
 	}
 
+	if snap.newsSource != nil && snap.sentimentScorer != nil {
+		if newsSig, ok := e.generateNewsSentimentSignal(ctx, req.Symbol, snap); ok {
+			indSignals = append(indSignals, newsSig)
+		}
+	}
+
 	composite := signal.Aggregate(req.Symbol, indSignals)
 	result.Signals = append([]bullarc.Signal{composite}, indSignals...)
 
@@ -262,6 +303,70 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 	}
 
 	return result, nil
+}
+
+// generateNewsSentimentSignal fetches recent news for the symbol, scores each
+// article's headline via the sentiment scorer, and converts the aggregate
+// result into a single trading signal. Returns (zero, false) when no recent
+// news is available so the caller can omit it from aggregation.
+func (e *Engine) generateNewsSentimentSignal(ctx context.Context, symbol string, snap engineSnapshot) (bullarc.Signal, bool) {
+	since := time.Now().Add(-24 * time.Hour)
+	articles, err := snap.newsSource.FetchNews(ctx, []string{symbol}, since)
+	if err != nil {
+		slog.Warn("news fetch failed, skipping news sentiment", "symbol", symbol, "err", err)
+		return bullarc.Signal{}, false
+	}
+	if len(articles) == 0 {
+		slog.Info("no recent news for symbol, skipping news sentiment", "symbol", symbol)
+		return bullarc.Signal{}, false
+	}
+
+	results, err := snap.sentimentScorer.ScoreArticles(ctx, articles)
+	if err != nil {
+		slog.Warn("sentiment scoring failed, skipping news sentiment", "symbol", symbol, "err", err)
+		return bullarc.Signal{}, false
+	}
+
+	// Build a lookup so we can correlate results to article metadata.
+	articleByID := make(map[string]struct{}, len(articles))
+	for _, a := range articles {
+		articleByID[a.ID] = struct{}{}
+	}
+
+	scored := make([]signal.ScoredArticle, 0, len(results))
+	for _, r := range results {
+		if _, ok := articleByID[r.ArticleID]; !ok {
+			continue
+		}
+		scored = append(scored, signal.ScoredArticle{
+			Sentiment:  string(r.Sentiment),
+			Confidence: r.Confidence,
+		})
+	}
+
+	sig, ok := signal.NewsSentimentSignal(symbol, scored)
+	if !ok {
+		return bullarc.Signal{}, false
+	}
+
+	// Apply the weight multiplier to the confidence so that operators can
+	// tune how much the news sentiment vote influences the composite signal.
+	if snap.newsSentimentWeight != 1.0 {
+		sig.Confidence = sig.Confidence * snap.newsSentimentWeight
+		if sig.Confidence > 100 {
+			sig.Confidence = 100
+		}
+		if sig.Confidence < 0 {
+			sig.Confidence = 0
+		}
+	}
+
+	slog.Info("news sentiment signal generated",
+		"symbol", symbol,
+		"type", sig.Type,
+		"confidence", sig.Confidence,
+		"articles", len(scored))
+	return sig, true
 }
 
 // explainResultWithProvider calls the given LLM provider to generate a plain
