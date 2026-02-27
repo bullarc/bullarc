@@ -113,6 +113,12 @@ type streamEngine interface {
 	Watch(ctx context.Context, req bullarc.AnalysisRequest, pollInterval time.Duration, onResult func(bullarc.AnalysisResult)) error
 }
 
+// signalBusEngine is satisfied by *engine.Engine when it exposes a push-based
+// signal subscription via its internal signal bus.
+type signalBusEngine interface {
+	Subscribe(ctx context.Context, symbol string) <-chan bullarc.Signal
+}
+
 // Stream polls the engine for new analysis results at pollInterval and delivers
 // each Signal from every result to the returned channel. The channel is closed
 // when ctx is cancelled. If the underlying engine does not support streaming,
@@ -178,6 +184,59 @@ func (c *Client) StreamSymbols(ctx context.Context, symbols []string, pollInterv
 		wg.Wait()
 		close(ch)
 	}()
+	return ch
+}
+
+// Subscribe returns a channel that receives signals pushed by the engine's
+// internal signal bus whenever Analyze is called for req.Symbol. Unlike
+// Stream, Subscribe does not start an internal polling loop — the consumer
+// receives signals without polling, as they are pushed by whatever is driving
+// analysis (e.g. a Watch loop, a direct Analyze call, or a CLI command).
+//
+// If the underlying engine does not support push-based delivery, the channel
+// is closed immediately.
+//
+// The channel is closed when ctx is cancelled, at which point the subscription
+// is removed and its resources are reclaimed.
+func (c *Client) Subscribe(ctx context.Context, req bullarc.AnalysisRequest) <-chan bullarc.Signal {
+	req = c.applyConfigToReq(req)
+	sbe, ok := c.engine.(signalBusEngine)
+	if !ok {
+		ch := make(chan bullarc.Signal)
+		close(ch)
+		return ch
+	}
+	return sbe.Subscribe(ctx, req.Symbol)
+}
+
+// StreamPush starts an internal Watch loop at pollInterval and delivers
+// signals to the caller via the engine's push-based signal bus. The consumer
+// receives each new signal as it is produced, without needing to poll.
+//
+// StreamPush falls back to the polling-based Stream if the engine does not
+// support push delivery.
+//
+// The channel is closed when ctx is cancelled.
+func (c *Client) StreamPush(ctx context.Context, req bullarc.AnalysisRequest, pollInterval time.Duration) <-chan bullarc.Signal {
+	req = c.applyConfigToReq(req)
+	sbe, ok := c.engine.(signalBusEngine)
+	if !ok {
+		return c.Stream(ctx, req, pollInterval)
+	}
+
+	ch := sbe.Subscribe(ctx, req.Symbol)
+
+	// Start a Watch loop to drive periodic Analyze calls. The Analyze method
+	// publishes to the bus, which then pushes signals to ch and any other
+	// concurrent subscribers.
+	if we, ok := c.engine.(streamEngine); ok {
+		go func() {
+			_ = we.Watch(ctx, req, pollInterval, func(_ bullarc.AnalysisResult) {
+				// no-op: signals are delivered via the bus subscription above
+			})
+		}()
+	}
+
 	return ch
 }
 

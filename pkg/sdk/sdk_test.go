@@ -285,6 +285,152 @@ func (m *minimalEngine) Analyze(_ context.Context, req bullarc.AnalysisRequest) 
 	return bullarc.AnalysisResult{Symbol: req.Symbol}, nil
 }
 
-func (m *minimalEngine) RegisterIndicator(_ bullarc.Indicator)       {}
-func (m *minimalEngine) RegisterDataSource(_ bullarc.DataSource)     {}
-func (m *minimalEngine) RegisterLLMProvider(_ bullarc.LLMProvider)   {}
+func (m *minimalEngine) RegisterIndicator(_ bullarc.Indicator)     {}
+func (m *minimalEngine) RegisterDataSource(_ bullarc.DataSource)   {}
+func (m *minimalEngine) RegisterLLMProvider(_ bullarc.LLMProvider) {}
+
+// --- Subscribe / StreamPush tests ---
+
+// TestSubscribe_PushWithoutPolling verifies that Subscribe delivers signals
+// pushed by Analyze without the consumer polling.
+func TestSubscribe_PushWithoutPolling(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	client := newSDKClient(bars)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ch := client.Subscribe(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+
+	// Trigger analysis externally — the consumer does not poll.
+	go func() {
+		_, _ = client.Analyze(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+	}()
+
+	select {
+	case sig := <-ch:
+		assert.Equal(t, "AAPL", sig.Symbol)
+	case <-ctx.Done():
+		t.Fatal("no signal received within timeout")
+	}
+}
+
+// TestSubscribe_MultipleSubscribersEachReceiveIndependently verifies that two
+// independent subscribers each receive signals from a single Analyze call.
+func TestSubscribe_MultipleSubscribersEachReceiveIndependently(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	client := newSDKClient(bars)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ch1 := client.Subscribe(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+	ch2 := client.Subscribe(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+
+	// Trigger analysis once.
+	_, err := client.Analyze(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+	require.NoError(t, err)
+
+	for i, ch := range []<-chan bullarc.Signal{ch1, ch2} {
+		select {
+		case sig := <-ch:
+			assert.Equal(t, "AAPL", sig.Symbol, "subscriber %d symbol", i+1)
+		case <-time.After(time.Second):
+			t.Fatalf("subscriber %d: no signal received within 1s", i+1)
+		}
+	}
+}
+
+// TestSubscribe_ChannelClosedOnContextCancel verifies that the Subscribe
+// channel is closed when the subscription context is cancelled.
+func TestSubscribe_ChannelClosedOnContextCancel(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	client := newSDKClient(bars)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := client.Subscribe(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+
+	cancel()
+
+	// Channel must close after context cancellation.
+	select {
+	case _, open := <-ch:
+		assert.False(t, open, "channel must be closed after context cancel")
+	case <-time.After(time.Second):
+		t.Fatal("channel not closed after context cancel")
+	}
+}
+
+// TestSubscribe_NonBusEngineClosesImmediately verifies that Subscribe on an
+// engine without bus support returns a closed channel immediately.
+func TestSubscribe_NonBusEngineClosesImmediately(t *testing.T) {
+	client := sdk.New(&minimalEngine{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	ch := client.Subscribe(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
+
+	select {
+	case _, open := <-ch:
+		assert.False(t, open, "non-bus engine must return a closed channel")
+	case <-ctx.Done():
+		t.Fatal("channel not closed immediately for non-bus engine")
+	}
+}
+
+// TestStreamPush_DeliversSignalsViaBus verifies that StreamPush pushes signals
+// to the consumer without the consumer polling.
+func TestStreamPush_DeliversSignalsViaBus(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	client := newSDKClient(bars)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ch := client.StreamPush(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"}, 500*time.Millisecond)
+
+	select {
+	case sig := <-ch:
+		assert.Equal(t, "AAPL", sig.Symbol)
+	case <-ctx.Done():
+		t.Fatal("no signal received via StreamPush within timeout")
+	}
+}
+
+// TestStreamPush_ChannelClosedOnContextCancel verifies that the StreamPush
+// channel closes when ctx is cancelled.
+func TestStreamPush_ChannelClosedOnContextCancel(t *testing.T) {
+	bars := testutil.MakeBars(makePrices(100, 100, 0.5)...)
+	client := newSDKClient(bars)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	ch := client.StreamPush(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"}, 100*time.Millisecond)
+
+	// Drain signals and verify channel closes.
+	var count int
+	for range ch {
+		count++
+	}
+	// Channel closed — test passes as long as it doesn't hang.
+}
+
+// TestStreamPush_FallsBackWhenNoBus verifies that StreamPush falls back to
+// polling-based Stream when the engine lacks bus support.
+func TestStreamPush_FallsBackWhenNoBus(t *testing.T) {
+	client := sdk.New(&minimalEngine{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	ch := client.StreamPush(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"}, 50*time.Millisecond)
+
+	var count int
+	for range ch {
+		count++
+	}
+	// minimalEngine produces no signals, but channel must eventually close.
+	assert.Equal(t, 0, count)
+}
