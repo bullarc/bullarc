@@ -41,6 +41,9 @@ type Engine struct {
 	bus                     signalBus
 	socialTracker           bullarc.SocialTracker
 	socialConfidencePenalty float64
+	optionsSource           bullarc.OptionsSource
+	optionsFlowWeight       float64
+	optionsCfg              bullarc.OptionsConfig
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -57,6 +60,7 @@ func New() *Engine {
 		newsSentimentWeight:     1.0,
 		llmMetaSignalWeight:     2.0,
 		socialConfidencePenalty: DefaultSocialConfidencePenalty,
+		optionsFlowWeight:       1.0,
 	}
 }
 
@@ -149,6 +153,35 @@ func (e *Engine) SetSocialConfidencePenalty(pct float64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.socialConfidencePenalty = pct
+}
+
+// RegisterOptionsSource sets the options data source used to detect unusual
+// options flow. When registered, the engine generates an OptionsFlow signal
+// from each analysis run and includes it in the composite aggregation.
+// Set to nil to disable options flow analysis.
+func (e *Engine) RegisterOptionsSource(os bullarc.OptionsSource) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.optionsSource = os
+}
+
+// SetOptionsFlowWeight sets the weight multiplier applied to the confidence
+// of the options flow signal before it participates in aggregation.
+// A value of 1.0 (the default) gives the options signal equal weight to one
+// technical indicator vote. Values > 1.0 amplify it; < 1.0 reduce it.
+func (e *Engine) SetOptionsFlowWeight(w float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.optionsFlowWeight = w
+}
+
+// SetOptionsConfig sets the configuration used when fetching options activity.
+// Use this to override the default premium threshold or supply historical
+// put/call ratio data for anomaly detection.
+func (e *Engine) SetOptionsConfig(cfg bullarc.OptionsConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.optionsCfg = cfg
 }
 
 // SetNewsSentimentWeight sets the weight multiplier applied to the confidence
@@ -246,6 +279,9 @@ type engineSnapshot struct {
 	webhookDispatcher       *webhook.Dispatcher
 	socialTracker           bullarc.SocialTracker
 	socialConfidencePenalty float64
+	optionsSource           bullarc.OptionsSource
+	optionsFlowWeight       float64
+	optionsCfg              bullarc.OptionsConfig
 	lookback                int
 	interval                string
 }
@@ -266,6 +302,9 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 		webhookDispatcher:       e.webhookDispatcher,
 		socialTracker:           e.socialTracker,
 		socialConfidencePenalty: e.socialConfidencePenalty,
+		optionsSource:           e.optionsSource,
+		optionsFlowWeight:       e.optionsFlowWeight,
+		optionsCfg:              e.optionsCfg,
 		lookback:                e.lookback,
 		interval:                e.interval,
 	}
@@ -322,6 +361,14 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		sig, ok := gen(name, req.Symbol, latestBar, values)
 		if ok {
 			indSignals = append(indSignals, sig)
+		}
+	}
+
+	// Generate options flow signal when an options source is registered.
+	// The signal is omitted when no unusual activity is detected (nil return).
+	if snap.optionsSource != nil {
+		if optSig, ok := e.generateOptionsFlowSignal(ctx, req.Symbol, snap); ok {
+			indSignals = append(indSignals, optSig)
 		}
 	}
 
@@ -670,6 +717,36 @@ func (e *Engine) applySocialRiskFlag(ctx context.Context, symbol string, composi
 		}
 	}
 	return composite
+}
+
+// generateOptionsFlowSignal fetches unusual options activity for the symbol and
+// converts it into a trading signal. Returns (zero, false) when no unusual
+// activity is detected so the caller can omit it from aggregation.
+func (e *Engine) generateOptionsFlowSignal(ctx context.Context, symbol string, snap engineSnapshot) (bullarc.Signal, bool) {
+	events, err := snap.optionsSource.FetchOptionsActivity(ctx, symbol, snap.optionsCfg)
+	if err != nil {
+		slog.Warn("options flow fetch failed, skipping signal", "symbol", symbol, "err", err)
+		return bullarc.Signal{}, false
+	}
+	if len(events) == 0 {
+		slog.Info("no unusual options activity, skipping options flow signal", "symbol", symbol)
+		return bullarc.Signal{}, false
+	}
+
+	sig := signal.OptionsActivitySignal(events)
+	if sig == nil {
+		return bullarc.Signal{}, false
+	}
+
+	out := applySignalWeight(*sig, snap.optionsFlowWeight)
+
+	slog.Info("options flow signal generated",
+		"symbol", symbol,
+		"type", out.Type,
+		"confidence", out.Confidence,
+		"events", len(events),
+		"weight", snap.optionsFlowWeight)
+	return out, true
 }
 
 func (e *Engine) fetchBarsWithSnapshot(ctx context.Context, symbol string, snap engineSnapshot) ([]bullarc.OHLCV, error) {
