@@ -1,0 +1,37 @@
+# Build artifacts
+bin/
+*.test
+*.out
+coverage.html
+
+# Version control
+.git/
+.gitignore
+
+# Local configuration with secrets
+.env
+.env.*
+config.yaml
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project-local files not needed in image
+.status/
+.logs/
+.prompts/
+BACKLOG.md
+BACKLOG-REVIEW.md
+GOALS.md
+run-backlog.sh
+setup-accounts.sh
+
+# Go workspace
+go.work
+go.work.sum
+vendor/

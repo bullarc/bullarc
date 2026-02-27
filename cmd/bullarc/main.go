@@ -27,6 +27,7 @@ func main() {
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(watchCmd)
 	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(versionCmd)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		slog.Error("command failed", "err", err)
