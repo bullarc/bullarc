@@ -35,8 +35,9 @@ type BacktestSummary struct {
 
 // BacktestResult is the complete result of a backtest run.
 type BacktestResult struct {
-	Symbol     string          `json:"symbol"`
-	BarSignals []BarSignal     `json:"bar_signals"`
-	Summary    BacktestSummary `json:"summary"`
-	Timestamp  time.Time       `json:"timestamp"`
+	Symbol      string          `json:"symbol"`
+	BarSignals  []BarSignal     `json:"bar_signals"`
+	Summary     BacktestSummary `json:"summary"`
+	LLMAnalysis string          `json:"llm_analysis,omitempty"`
+	Timestamp   time.Time       `json:"timestamp"`
 }
