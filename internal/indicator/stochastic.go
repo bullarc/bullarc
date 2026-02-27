@@ -12,6 +12,12 @@ type Stochastic struct {
 	period  int
 	smoothK int
 	smoothD int
+
+	// Incremental state for Update.
+	bars     []bullarc.OHLCV // sliding window of last period bars (for high/low/close)
+	rawKBuf  []float64       // sliding window of raw %K values for smoothK SMA
+	slowKBuf []float64       // sliding window of slow %K values for smoothD SMA
+	count    int             // total bars received
 }
 
 // NewStochastic creates a new Stochastic indicator with the given parameters.
@@ -98,4 +104,88 @@ func (s *Stochastic) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue, er
 	}
 
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new Stochastic value.
+// Returns nil during the warmup period.
+func (s *Stochastic) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	s.count++
+
+	// Maintain the sliding window of bars for period lookback.
+	if len(s.bars) < s.period {
+		s.bars = append(s.bars, bar)
+	} else {
+		idx := (s.count - 1) % s.period
+		s.bars[idx] = bar
+	}
+
+	// Need at least period bars to compute raw %K.
+	if s.count < s.period {
+		return nil
+	}
+
+	// Compute raw %K from the current window.
+	loLow := s.bars[0].Low
+	hiHigh := s.bars[0].High
+	for i := 1; i < len(s.bars); i++ {
+		if s.bars[i].Low < loLow {
+			loLow = s.bars[i].Low
+		}
+		if s.bars[i].High > hiHigh {
+			hiHigh = s.bars[i].High
+		}
+	}
+	rawK := 0.0
+	if hiHigh != loLow {
+		rawK = (bar.Close - loLow) / (hiHigh - loLow) * 100
+	}
+
+	// Add rawK to the smoothK sliding window.
+	if len(s.rawKBuf) < s.smoothK {
+		s.rawKBuf = append(s.rawKBuf, rawK)
+	} else {
+		rawKIdx := (s.count - s.period) % s.smoothK
+		s.rawKBuf[rawKIdx] = rawK
+	}
+
+	// Need smoothK raw %K values to compute slow %K.
+	rawKCount := s.count - s.period + 1
+	if rawKCount < s.smoothK {
+		return nil
+	}
+
+	// Slow %K = SMA of rawK.
+	var sumK float64
+	for _, v := range s.rawKBuf {
+		sumK += v
+	}
+	slowK := sumK / float64(s.smoothK)
+
+	// Add slowK to the smoothD sliding window.
+	if len(s.slowKBuf) < s.smoothD {
+		s.slowKBuf = append(s.slowKBuf, slowK)
+	} else {
+		slowKCount := rawKCount - s.smoothK + 1
+		slowKIdx := (slowKCount - 1) % s.smoothD
+		s.slowKBuf[slowKIdx] = slowK
+	}
+
+	// Need smoothD slow %K values to compute %D.
+	slowKCount := rawKCount - s.smoothK + 1
+	if slowKCount < s.smoothD {
+		return nil
+	}
+
+	// %D = SMA of slow %K.
+	var sumD float64
+	for _, v := range s.slowKBuf {
+		sumD += v
+	}
+	slowD := sumD / float64(s.smoothD)
+
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: slowK,
+		Extra: map[string]float64{"d": slowD},
+	}
 }

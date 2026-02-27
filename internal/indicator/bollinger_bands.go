@@ -12,6 +12,10 @@ import (
 type BollingerBands struct {
 	period     int
 	multiplier float64
+
+	// Incremental state for Update.
+	window []float64 // sliding window of last N closes
+	count  int       // total bars received
 }
 
 // NewBollingerBands creates a new BollingerBands indicator.
@@ -85,6 +89,64 @@ func (b *BollingerBands) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue
 	}
 
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new Bollinger Bands value.
+// Returns nil during the warmup period (fewer than period bars received).
+func (b *BollingerBands) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	if b.window == nil {
+		b.window = make([]float64, 0, b.period)
+	}
+
+	b.count++
+
+	if len(b.window) < b.period {
+		b.window = append(b.window, bar.Close)
+	} else {
+		idx := (b.count - 1) % b.period
+		b.window[idx] = bar.Close
+	}
+
+	if b.count < b.period {
+		return nil
+	}
+
+	var sum float64
+	for _, v := range b.window {
+		sum += v
+	}
+	middle := sum / float64(b.period)
+
+	var sumSq float64
+	for _, v := range b.window {
+		diff := v - middle
+		sumSq += diff * diff
+	}
+	stddev := math.Sqrt(sumSq / float64(b.period))
+
+	upper := middle + b.multiplier*stddev
+	lower := middle - b.multiplier*stddev
+
+	bandwidth := 0.0
+	if middle != 0 {
+		bandwidth = (upper - lower) / middle
+	}
+
+	percentB := 0.0
+	if upper != lower {
+		percentB = (bar.Close - lower) / (upper - lower)
+	}
+
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: middle,
+		Extra: map[string]float64{
+			"upper":     upper,
+			"lower":     lower,
+			"bandwidth": bandwidth,
+			"percent_b": percentB,
+		},
+	}
 }
 
 // windowSMA computes the mean of the close prices in a window.

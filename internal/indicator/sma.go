@@ -9,6 +9,10 @@ import (
 // SMA computes the Simple Moving Average over a configurable period.
 type SMA struct {
 	period int
+
+	// Incremental state for Update.
+	window []float64 // sliding window of last N closes
+	count  int       // total bars received
 }
 
 // NewSMA creates a new SMA indicator with the given period.
@@ -61,4 +65,36 @@ func (s *SMA) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue, error) {
 	}
 
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new SMA value.
+// Returns nil during the warmup period (fewer than period bars received).
+func (s *SMA) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	if s.window == nil {
+		s.window = make([]float64, 0, s.period)
+	}
+
+	s.count++
+
+	if len(s.window) < s.period {
+		s.window = append(s.window, bar.Close)
+	} else {
+		// Shift window: overwrite the oldest entry using a ring approach.
+		idx := (s.count - 1) % s.period
+		s.window[idx] = bar.Close
+	}
+
+	if s.count < s.period {
+		return nil
+	}
+
+	var sum float64
+	for _, v := range s.window {
+		sum += v
+	}
+
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: sum / float64(s.period),
+	}
 }

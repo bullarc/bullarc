@@ -10,6 +10,12 @@ import (
 // The first value is seeded from the SMA of the initial period bars.
 type EMA struct {
 	period int
+
+	// Incremental state for Update.
+	seedSum float64 // running sum for SMA seed
+	prevEMA float64 // previous EMA value
+	count   int     // total bars received
+	seeded  bool    // true once the initial SMA seed has been computed
 }
 
 // NewEMA creates a new EMA indicator with the given period.
@@ -52,6 +58,32 @@ func (e *EMA) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue, error) {
 		}
 	}
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new EMA value.
+// Returns nil during the warmup period (fewer than period bars received).
+func (e *EMA) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	e.count++
+	k := 2.0 / float64(e.period+1)
+
+	if !e.seeded {
+		e.seedSum += bar.Close
+		if e.count < e.period {
+			return nil
+		}
+		e.prevEMA = e.seedSum / float64(e.period)
+		e.seeded = true
+		return &bullarc.IndicatorValue{
+			Time:  bar.Time,
+			Value: e.prevEMA,
+		}
+	}
+
+	e.prevEMA = bar.Close*k + e.prevEMA*(1-k)
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: e.prevEMA,
+	}
 }
 
 // barCloses extracts close prices from a slice of OHLCV bars.

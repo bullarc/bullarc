@@ -11,6 +11,13 @@ import (
 // using Wilder's smoothing method.
 type ATR struct {
 	period int
+
+	// Incremental state for Update.
+	prevBar bullarc.OHLCV // previous bar for true range calculation
+	prevATR float64       // previous ATR value (Wilder smoothed)
+	sumTR   float64       // running sum for initial seed
+	count   int           // total bars received
+	seeded  bool          // true once the initial ATR seed has been computed
 }
 
 // NewATR creates a new ATR indicator with the given period.
@@ -66,6 +73,40 @@ func (a *ATR) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue, error) {
 	}
 
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new ATR value.
+// Returns nil during the warmup period (fewer than period+1 bars received).
+func (a *ATR) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	a.count++
+
+	if a.count == 1 {
+		a.prevBar = bar
+		return nil
+	}
+
+	tr := trueRange(bar, a.prevBar)
+	a.prevBar = bar
+
+	if !a.seeded {
+		a.sumTR += tr
+		if a.count <= a.period {
+			return nil
+		}
+		// count == period+1: seed ATR from the mean of the first period true ranges
+		a.prevATR = a.sumTR / float64(a.period)
+		a.seeded = true
+		return &bullarc.IndicatorValue{
+			Time:  bar.Time,
+			Value: a.prevATR,
+		}
+	}
+
+	a.prevATR = (a.prevATR*float64(a.period-1) + tr) / float64(a.period)
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: a.prevATR,
+	}
 }
 
 // trueRange computes the true range for a bar given the previous bar.

@@ -8,7 +8,12 @@ import (
 
 // OBV computes the On-Balance Volume.
 // All bars produce a value; no warmup period is required.
-type OBV struct{}
+type OBV struct {
+	// Incremental state for Update.
+	prevClose float64 // previous bar close
+	obv       float64 // current OBV value
+	count     int     // total bars received
+}
 
 // NewOBV creates a new OBV indicator.
 func NewOBV() *OBV {
@@ -56,4 +61,31 @@ func (o *OBV) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue, error) {
 	}
 
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new OBV value.
+// Always returns a value (no warmup period).
+func (o *OBV) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	o.count++
+
+	if o.count == 1 {
+		o.prevClose = bar.Close
+		return &bullarc.IndicatorValue{
+			Time:  bar.Time,
+			Value: 0,
+		}
+	}
+
+	switch {
+	case bar.Close > o.prevClose:
+		o.obv += bar.Volume
+	case bar.Close < o.prevClose:
+		o.obv -= bar.Volume
+	}
+	o.prevClose = bar.Close
+
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: o.obv,
+	}
 }

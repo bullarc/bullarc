@@ -8,7 +8,11 @@ import (
 
 // VWAP computes the cumulative Volume Weighted Average Price.
 // All bars are valid; no warmup period is required.
-type VWAP struct{}
+type VWAP struct {
+	// Incremental state for Update.
+	cumTPV float64 // cumulative typical price * volume
+	cumVol float64 // cumulative volume
+}
 
 // NewVWAP creates a new VWAP indicator.
 func NewVWAP() *VWAP {
@@ -53,4 +57,22 @@ func (v *VWAP) Compute(bars []bullarc.OHLCV) ([]bullarc.IndicatorValue, error) {
 	}
 
 	return values, nil
+}
+
+// Update processes a single new bar incrementally and returns the new VWAP value.
+// Always returns a value (no warmup period).
+func (v *VWAP) Update(bar bullarc.OHLCV) *bullarc.IndicatorValue {
+	tp := (bar.High + bar.Low + bar.Close) / 3
+	v.cumTPV += tp * bar.Volume
+	v.cumVol += bar.Volume
+
+	vwap := 0.0
+	if v.cumVol > 0 {
+		vwap = v.cumTPV / v.cumVol
+	}
+
+	return &bullarc.IndicatorValue{
+		Time:  bar.Time,
+		Value: vwap,
+	}
 }
