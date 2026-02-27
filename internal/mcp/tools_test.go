@@ -15,8 +15,10 @@ import (
 
 // stubBackend is a test double implementing the mcp.Backend interface.
 type stubBackend struct {
-	analyzeFunc    func(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
-	hasLLMProvider bool
+	analyzeFunc          func(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
+	backtestCSVFunc      func(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
+	explainBacktestFunc  func(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
+	hasLLMProvider       bool
 }
 
 func (s *stubBackend) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
@@ -26,7 +28,17 @@ func (s *stubBackend) Analyze(ctx context.Context, req bullarc.AnalysisRequest) 
 	return bullarc.AnalysisResult{Symbol: req.Symbol, Timestamp: time.Now()}, nil
 }
 
-func (s *stubBackend) BacktestCSV(_ context.Context, _, _ string, _ []string) (bullarc.BacktestResult, error) {
+func (s *stubBackend) BacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error) {
+	if s.backtestCSVFunc != nil {
+		return s.backtestCSVFunc(ctx, csvPath, symbol, indicators)
+	}
+	return bullarc.BacktestResult{}, nil
+}
+
+func (s *stubBackend) ExplainBacktestCSV(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error) {
+	if s.explainBacktestFunc != nil {
+		return s.explainBacktestFunc(ctx, csvPath, symbol, indicators)
+	}
 	return bullarc.BacktestResult{}, nil
 }
 
@@ -459,4 +471,152 @@ func TestStreamSignals_NoSignalsError(t *testing.T) {
 	})
 	assert.True(t, isError)
 	assert.Contains(t, text, "no signals received")
+}
+
+// --- explain_backtest tests ---
+
+// callExplainBacktest is a helper that invokes the explain_backtest tool on a server
+// built with the given backend.
+func callExplainBacktest(t *testing.T, b mcp.Backend, args map[string]any) (string, bool) {
+	t.Helper()
+	srv := mcp.New("test", "0.0.0")
+	mcp.RegisterTools(srv, b)
+	return invokeToolViaServer(t, srv, "explain_backtest", args)
+}
+
+// TestExplainBacktest_MissingCsvPath verifies that omitting csv_path returns an error.
+func TestExplainBacktest_MissingCsvPath(t *testing.T) {
+	b := &stubBackend{}
+	text, isError := callExplainBacktest(t, b, map[string]any{})
+	assert.True(t, isError, "expected isError=true for missing csv_path")
+	assert.Contains(t, text, "csv_path is required")
+}
+
+// TestExplainBacktest_NoLLMProvider verifies that the tool returns raw stats plus
+// a note when no LLM provider is configured (no error is returned).
+func TestExplainBacktest_NoLLMProvider(t *testing.T) {
+	now := time.Date(2026, 2, 27, 10, 0, 0, 0, time.UTC)
+	b := &stubBackend{
+		hasLLMProvider: false,
+		explainBacktestFunc: func(_ context.Context, _, symbol string, _ []string) (bullarc.BacktestResult, error) {
+			return bullarc.BacktestResult{
+				Symbol:    symbol,
+				Timestamp: now,
+				Summary: bullarc.BacktestSummary{
+					TotalSignals: 10,
+					BuyCount:     6,
+					SellCount:    3,
+					HoldCount:    1,
+					SimReturn:    8.5,
+					MaxDrawdown:  2.1,
+					WinRate:      66.7,
+				},
+			}, nil
+		},
+	}
+
+	text, isError := callExplainBacktest(t, b, map[string]any{"csv_path": "/fake/path.csv", "symbol": "AAPL"})
+	require.False(t, isError, "no LLM provider must not cause a tool error, got: %s", text)
+
+	var output map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &output))
+
+	assert.Equal(t, "AAPL", output["symbol"])
+	assert.InDelta(t, 8.5, output["sim_return_pct"], 0.01)
+	assert.InDelta(t, 66.7, output["win_rate_pct"], 0.01)
+	assert.Nil(t, output["llm_explanation"], "llm_explanation must be absent when no LLM provider")
+	note, _ := output["note"].(string)
+	assert.NotEmpty(t, note, "a note must be present when no LLM provider is configured")
+	assert.Contains(t, note, "LLM provider")
+}
+
+// TestExplainBacktest_WithLLMExplanation verifies that the tool returns stats
+// together with an AI-generated explanation when an LLM provider is configured.
+func TestExplainBacktest_WithLLMExplanation(t *testing.T) {
+	const wantExplanation = "AAPL showed strong performance with consistent buy signals."
+	now := time.Date(2026, 2, 27, 10, 0, 0, 0, time.UTC)
+	b := &stubBackend{
+		hasLLMProvider: true,
+		explainBacktestFunc: func(_ context.Context, _, symbol string, _ []string) (bullarc.BacktestResult, error) {
+			return bullarc.BacktestResult{
+				Symbol:      symbol,
+				Timestamp:   now,
+				LLMAnalysis: wantExplanation,
+				Summary: bullarc.BacktestSummary{
+					TotalSignals: 20,
+					BuyCount:     12,
+					SellCount:    6,
+					HoldCount:    2,
+					SimReturn:    15.3,
+					MaxDrawdown:  4.2,
+					WinRate:      75.0,
+				},
+			}, nil
+		},
+	}
+
+	text, isError := callExplainBacktest(t, b, map[string]any{"csv_path": "/fake/path.csv", "symbol": "AAPL"})
+	require.False(t, isError, "expected no error with LLM provider, got: %s", text)
+
+	var output map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &output))
+
+	assert.Equal(t, "AAPL", output["symbol"])
+	assert.Equal(t, wantExplanation, output["llm_explanation"])
+	assert.InDelta(t, 15.3, output["sim_return_pct"], 0.01)
+	assert.InDelta(t, 75.0, output["win_rate_pct"], 0.01)
+	assert.Nil(t, output["note"], "note must be absent when LLM provider is configured")
+}
+
+// TestExplainBacktest_BacktestError verifies that a backend error surfaces as a tool error.
+func TestExplainBacktest_BacktestError(t *testing.T) {
+	b := &stubBackend{
+		explainBacktestFunc: func(_ context.Context, _, _ string, _ []string) (bullarc.BacktestResult, error) {
+			return bullarc.BacktestResult{}, fmt.Errorf("csv file not found")
+		},
+	}
+
+	text, isError := callExplainBacktest(t, b, map[string]any{"csv_path": "/nonexistent.csv"})
+	assert.True(t, isError, "expected isError=true when backend returns error")
+	assert.Contains(t, text, "backtest failed")
+	assert.Contains(t, text, "csv file not found")
+}
+
+// TestExplainBacktest_IndicatorsForwarded verifies that the indicators argument
+// is forwarded correctly to ExplainBacktestCSV.
+func TestExplainBacktest_IndicatorsForwarded(t *testing.T) {
+	var capturedIndicators []string
+	b := &stubBackend{
+		hasLLMProvider: false,
+		explainBacktestFunc: func(_ context.Context, _, _ string, indicators []string) (bullarc.BacktestResult, error) {
+			capturedIndicators = indicators
+			return bullarc.BacktestResult{Timestamp: time.Now()}, nil
+		},
+	}
+
+	_, isError := callExplainBacktest(t, b, map[string]any{
+		"csv_path":   "/fake/path.csv",
+		"indicators": []any{"SMA_14", "RSI_14"},
+	})
+	require.False(t, isError)
+	assert.Equal(t, []string{"SMA_14", "RSI_14"}, capturedIndicators)
+}
+
+// TestExplainBacktest_DefaultSymbol verifies that an omitted symbol defaults to UNKNOWN.
+func TestExplainBacktest_DefaultSymbol(t *testing.T) {
+	var capturedSymbol string
+	b := &stubBackend{
+		explainBacktestFunc: func(_ context.Context, _, symbol string, _ []string) (bullarc.BacktestResult, error) {
+			capturedSymbol = symbol
+			return bullarc.BacktestResult{Symbol: symbol, Timestamp: time.Now()}, nil
+		},
+	}
+
+	text, isError := callExplainBacktest(t, b, map[string]any{"csv_path": "/fake/path.csv"})
+	require.False(t, isError, "expected no error, got: %s", text)
+	assert.Equal(t, "UNKNOWN", capturedSymbol)
+
+	var output map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &output))
+	assert.Equal(t, "UNKNOWN", output["symbol"])
 }
