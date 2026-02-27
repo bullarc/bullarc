@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,21 +16,22 @@ import (
 
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
-	Short: "Run a one-shot technical analysis on a symbol",
+	Short: "Run a one-shot technical analysis on one or more symbols",
 	RunE:  runAnalyze,
 }
 
 var (
-	analyzeSymbol string
-	analyzeConfig string
-	analyzeCSV    string
-	analyzeLLM    bool
-	analyzeLLMKey string
+	analyzeSymbol  string
+	analyzeSymbols string
+	analyzeConfig  string
+	analyzeCSV     string
+	analyzeLLM     bool
+	analyzeLLMKey  string
 )
 
 func init() {
-	analyzeCmd.Flags().StringVarP(&analyzeSymbol, "symbol", "s", "", "symbol to analyze (required)")
-	_ = analyzeCmd.MarkFlagRequired("symbol")
+	analyzeCmd.Flags().StringVarP(&analyzeSymbol, "symbol", "s", "", "symbol to analyze")
+	analyzeCmd.Flags().StringVar(&analyzeSymbols, "symbols", "", "comma-separated list of symbols (table output)")
 	analyzeCmd.Flags().StringVarP(&analyzeConfig, "config", "c", "", "path to config file")
 	analyzeCmd.Flags().StringVar(&analyzeCSV, "csv", "", "path to CSV file for local data")
 	analyzeCmd.Flags().BoolVar(&analyzeLLM, "llm", false, "generate plain English explanation via LLM")
@@ -38,20 +39,58 @@ func init() {
 }
 
 func runAnalyze(cmd *cobra.Command, _ []string) error {
+	symbols := resolveSymbols(analyzeSymbol, analyzeSymbols)
+	if len(symbols) == 0 {
+		return fmt.Errorf("provide --symbol or --symbols")
+	}
+
 	e, err := buildEngine(analyzeConfig, analyzeCSV, analyzeLLMKey)
 	if err != nil {
 		return err
 	}
-	result, err := e.Analyze(cmd.Context(), bullarc.AnalysisRequest{Symbol: analyzeSymbol, UseLLM: analyzeLLM})
-	if err != nil {
-		return fmt.Errorf("analyze: %w", err)
+
+	if len(symbols) == 1 {
+		result, err := e.Analyze(cmd.Context(), bullarc.AnalysisRequest{Symbol: symbols[0], UseLLM: analyzeLLM})
+		if err != nil {
+			return fmt.Errorf("analyze %s: %w", symbols[0], err)
+		}
+		PrintResult(os.Stdout, result)
+		return nil
 	}
-	printResult(result)
+
+	results := make([]bullarc.AnalysisResult, 0, len(symbols))
+	for _, sym := range symbols {
+		result, err := e.Analyze(cmd.Context(), bullarc.AnalysisRequest{Symbol: sym, UseLLM: analyzeLLM})
+		if err != nil {
+			return fmt.Errorf("analyze %s: %w", sym, err)
+		}
+		results = append(results, result)
+	}
+	PrintTable(os.Stdout, results)
 	return nil
 }
 
+// resolveSymbols combines the single --symbol flag and the comma-separated --symbols flag.
+func resolveSymbols(single, multi string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	add(single)
+	for _, s := range strings.Split(multi, ",") {
+		add(s)
+	}
+	return out
+}
+
 // buildEngine constructs an Engine from an optional config file, optional CSV data source,
-// and an optional LLM API key override. LLM key resolution order: llmKey param > config file > ANTHROPIC_API_KEY env var.
+// and an optional LLM API key override. LLM key resolution order:
+// llmKey param > config file > ANTHROPIC_API_KEY env var.
 func buildEngine(cfgPath, csvPath, llmKey string) (*engine.Engine, error) {
 	var (
 		e         *engine.Engine
@@ -105,18 +144,3 @@ func buildEngine(cfgPath, csvPath, llmKey string) (*engine.Engine, error) {
 	return e, nil
 }
 
-// printResult writes a human-readable analysis summary to stdout.
-func printResult(result bullarc.AnalysisResult) {
-	fmt.Printf("symbol:    %s\n", result.Symbol)
-	fmt.Printf("timestamp: %s\n", result.Timestamp.Format(time.RFC3339))
-	if len(result.Signals) == 0 {
-		fmt.Println("no signals (insufficient data)")
-		return
-	}
-	composite := result.Signals[0]
-	fmt.Printf("signal:    %s (confidence=%.0f%%)\n", colorSignal(os.Stdout, composite.Type), composite.Confidence)
-	fmt.Printf("summary:   %s\n", composite.Explanation)
-	if result.LLMAnalysis != "" {
-		fmt.Printf("\nexplanation:\n%s\n", result.LLMAnalysis)
-	}
-}

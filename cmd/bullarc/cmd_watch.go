@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -39,6 +40,6 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Printf("watching %s every %s (ctrl-c to stop)\n", watchSymbol, watchInterval)
 	return e.Watch(cmd.Context(), bullarc.AnalysisRequest{Symbol: watchSymbol}, watchInterval, func(result bullarc.AnalysisResult) {
-		printResult(result)
+		PrintResult(os.Stdout, result)
 	})
 }
