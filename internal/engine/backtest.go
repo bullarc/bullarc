@@ -24,7 +24,9 @@ func (e *Engine) Backtest(ctx context.Context, req bullarc.BacktestRequest) (bul
 		return result, nil
 	}
 
-	indicators := e.selectIndicators(req.Indicators)
+	e.mu.RLock()
+	indicators := e.selectIndicatorsLocked(req.Indicators)
+	e.mu.RUnlock()
 	slog.Info("backtest started",
 		"symbol", req.Symbol,
 		"bars", len(req.Bars),
@@ -104,6 +106,8 @@ func (e *Engine) BacktestCSV(ctx context.Context, csvPath, symbol string, indica
 
 // ListIndicators returns metadata for all indicators currently registered with the engine.
 func (e *Engine) ListIndicators() []bullarc.IndicatorMeta {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	metas := make([]bullarc.IndicatorMeta, 0, len(e.indicators))
 	for _, ind := range e.indicators {
 		metas = append(metas, ind.Meta())

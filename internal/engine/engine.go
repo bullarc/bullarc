@@ -4,6 +4,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/bullarc/bullarc"
@@ -14,8 +15,9 @@ import (
 )
 
 // Engine orchestrates analysis by coordinating indicators, data sources,
-// and LLM providers.
+// and LLM providers. All exported methods are safe for concurrent use.
 type Engine struct {
+	mu                sync.RWMutex
 	indicators        map[string]bullarc.Indicator
 	dataSources       []bullarc.DataSource
 	llmProvider       bullarc.LLMProvider
@@ -58,32 +60,44 @@ func NewWithConfig(cfg *config.Config) *Engine {
 
 // RegisterIndicator adds an indicator to the engine.
 func (e *Engine) RegisterIndicator(ind bullarc.Indicator) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.indicators[ind.Meta().Name] = ind
 }
 
 // RegisterDataSource adds a data source to the engine.
 func (e *Engine) RegisterDataSource(ds bullarc.DataSource) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.dataSources = append(e.dataSources, ds)
 }
 
 // HasDataSource reports whether at least one data source is registered.
 func (e *Engine) HasDataSource() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return len(e.dataSources) > 0
 }
 
 // RegisterLLMProvider sets the LLM provider for the engine.
 func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.llmProvider = llm
 }
 
 // SetInterval updates the data interval used when fetching bars.
 func (e *Engine) SetInterval(interval string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.interval = interval
 }
 
 // SetDataSource replaces the primary data source used by the engine.
 // If no data sources are registered yet, the given source becomes the first.
 func (e *Engine) SetDataSource(ds bullarc.DataSource) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if len(e.dataSources) == 0 {
 		e.dataSources = []bullarc.DataSource{ds}
 		return
@@ -94,6 +108,8 @@ func (e *Engine) SetDataSource(ds bullarc.DataSource) {
 // SetLLMProvider replaces the LLM provider used by the engine for generating
 // explanations. Passing nil disables LLM explanations.
 func (e *Engine) SetLLMProvider(llm bullarc.LLMProvider) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.llmProvider = llm
 }
 
@@ -101,16 +117,52 @@ func (e *Engine) SetLLMProvider(llm bullarc.LLMProvider) {
 // AnalysisResult immediately after Analyze completes. Dispatch errors are
 // logged but do not affect the returned result.
 func (e *Engine) RegisterWebhookDispatcher(d *webhook.Dispatcher) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.webhookDispatcher = d
+}
+
+// engineSnapshot holds a point-in-time copy of the engine's mutable fields.
+// It is used by Analyze to avoid holding the lock during I/O operations.
+type engineSnapshot struct {
+	indicators        []bullarc.Indicator
+	primaryDS         bullarc.DataSource
+	llmProvider       bullarc.LLMProvider
+	webhookDispatcher *webhook.Dispatcher
+	lookback          int
+	interval          string
+}
+
+// snapshot takes a brief read lock and captures the current engine state.
+func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	snap := engineSnapshot{
+		indicators: e.selectIndicatorsLocked(indicatorNames),
+		llmProvider:       e.llmProvider,
+		webhookDispatcher: e.webhookDispatcher,
+		lookback:          e.lookback,
+		interval:          e.interval,
+	}
+	if len(e.dataSources) > 0 {
+		snap.primaryDS = e.dataSources[0]
+	}
+	return snap
 }
 
 // Analyze fetches market data, computes indicators, generates per-indicator signals,
 // and aggregates them into a composite BUY/SELL/HOLD signal.
+// Analyze is safe for concurrent use by multiple goroutines.
 func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {
 	slog.Info("analysis started",
 		"symbol", req.Symbol,
 		"indicators", req.Indicators,
 		"use_llm", req.UseLLM)
+
+	// Take a brief snapshot of engine state so that long-running I/O (data
+	// fetching, LLM calls) is performed without holding the lock.
+	snap := e.snapshot(req.Indicators)
 
 	result := bullarc.AnalysisResult{
 		Symbol:          req.Symbol,
@@ -118,7 +170,7 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		IndicatorValues: make(map[string][]bullarc.IndicatorValue),
 	}
 
-	bars, err := e.fetchBars(ctx, req.Symbol)
+	bars, err := e.fetchBarsWithSnapshot(ctx, req.Symbol, snap)
 	if err != nil {
 		return result, err
 	}
@@ -127,11 +179,10 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		return result, nil
 	}
 
-	indicators := e.selectIndicators(req.Indicators)
 	latestBar := bars[len(bars)-1]
 	var indSignals []bullarc.Signal
 
-	for _, ind := range indicators {
+	for _, ind := range snap.indicators {
 		name := ind.Meta().Name
 		values, err := ind.Compute(bars)
 		if err != nil {
@@ -159,8 +210,8 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		"confidence", composite.Confidence,
 		"signals", len(indSignals))
 
-	if req.UseLLM && e.llmProvider != nil {
-		explanation, llmErr := e.explainResult(ctx, result)
+	if req.UseLLM && snap.llmProvider != nil {
+		explanation, llmErr := e.explainResultWithProvider(ctx, result, snap.llmProvider)
 		if llmErr != nil {
 			slog.Warn("llm explanation failed", "symbol", req.Symbol, "err", llmErr)
 		} else {
@@ -168,8 +219,8 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		}
 	}
 
-	if e.webhookDispatcher != nil {
-		if err := e.webhookDispatcher.Dispatch(ctx, result); err != nil {
+	if snap.webhookDispatcher != nil {
+		if err := snap.webhookDispatcher.Dispatch(ctx, result); err != nil {
 			slog.Warn("webhook dispatch failed", "symbol", req.Symbol, "err", err)
 		}
 	}
@@ -177,11 +228,11 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 	return result, nil
 }
 
-// explainResult calls the LLM provider to generate a plain English explanation
-// of the analysis result.
-func (e *Engine) explainResult(ctx context.Context, result bullarc.AnalysisResult) (string, error) {
+// explainResultWithProvider calls the given LLM provider to generate a plain
+// English explanation of the analysis result.
+func (e *Engine) explainResultWithProvider(ctx context.Context, result bullarc.AnalysisResult, provider bullarc.LLMProvider) (string, error) {
 	prompt := llm.AnalysisPrompt(result)
-	resp, err := e.llmProvider.Complete(ctx, bullarc.LLMRequest{Prompt: prompt, MaxTokens: 512})
+	resp, err := provider.Complete(ctx, bullarc.LLMRequest{Prompt: prompt, MaxTokens: 512})
 	if err != nil {
 		return "", err
 	}
@@ -189,19 +240,19 @@ func (e *Engine) explainResult(ctx context.Context, result bullarc.AnalysisResul
 	return resp.Text, nil
 }
 
-func (e *Engine) fetchBars(ctx context.Context, symbol string) ([]bullarc.OHLCV, error) {
-	if len(e.dataSources) == 0 {
+func (e *Engine) fetchBarsWithSnapshot(ctx context.Context, symbol string, snap engineSnapshot) ([]bullarc.OHLCV, error) {
+	if snap.primaryDS == nil {
 		return nil, nil
 	}
 	end := time.Now()
-	start := end.AddDate(0, 0, -e.lookback)
+	start := end.AddDate(0, 0, -snap.lookback)
 	q := bullarc.DataQuery{
 		Symbol:   symbol,
 		Start:    start,
 		End:      end,
-		Interval: e.interval,
+		Interval: snap.interval,
 	}
-	bars, err := e.dataSources[0].Fetch(ctx, q)
+	bars, err := snap.primaryDS.Fetch(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +260,9 @@ func (e *Engine) fetchBars(ctx context.Context, symbol string) ([]bullarc.OHLCV,
 	return bars, nil
 }
 
-func (e *Engine) selectIndicators(names []string) []bullarc.Indicator {
+// selectIndicatorsLocked returns the indicators matching names from the current
+// engine state. Must be called with e.mu held for reading.
+func (e *Engine) selectIndicatorsLocked(names []string) []bullarc.Indicator {
 	if len(names) == 0 {
 		inds := make([]bullarc.Indicator, 0, len(e.indicators))
 		for _, ind := range e.indicators {
