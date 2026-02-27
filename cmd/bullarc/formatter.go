@@ -139,6 +139,34 @@ func PrintResult(w io.Writer, result bullarc.AnalysisResult) {
 	}
 }
 
+// PrintBacktestResult writes a human-readable performance summary of a backtest to w.
+func PrintBacktestResult(w io.Writer, result bullarc.BacktestResult) {
+	width := getTerminalWidth()
+	if width < minWidth {
+		fmt.Fprintf(w, "terminal too narrow (need %d cols, got %d)\n", minWidth, width)
+		return
+	}
+
+	s := result.Summary
+	fmt.Fprintf(w, "%-*s %s\n", labelWidth, "symbol:", result.Symbol)
+	fmt.Fprintf(w, "%-*s %s\n", labelWidth, "timestamp:", result.Timestamp.Format(time.RFC3339))
+	fmt.Fprintln(w)
+
+	if s.TotalSignals == 0 {
+		fmt.Fprintln(w, "no signals generated (insufficient data or no indicators)")
+		return
+	}
+
+	fmt.Fprintf(w, "%-*s %d\n", labelWidth, "signals:", s.TotalSignals)
+	fmt.Fprintf(w, "%-*s %d\n", labelWidth, "buy:", s.BuyCount)
+	fmt.Fprintf(w, "%-*s %d\n", labelWidth, "sell:", s.SellCount)
+	fmt.Fprintf(w, "%-*s %d\n", labelWidth, "hold:", s.HoldCount)
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%-*s %.2f%%\n", labelWidth, "return:", s.SimReturn)
+	fmt.Fprintf(w, "%-*s %.2f%%\n", labelWidth, "drawdown:", s.MaxDrawdown)
+	fmt.Fprintf(w, "%-*s %.1f%%\n", labelWidth, "win rate:", s.WinRate)
+}
+
 // PrintTable writes a table of analysis results aligned in columns to w.
 func PrintTable(w io.Writer, results []bullarc.AnalysisResult) {
 	if len(results) == 0 {

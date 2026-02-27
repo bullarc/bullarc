@@ -25,6 +25,7 @@ func main() {
 	defer stop()
 
 	rootCmd.AddCommand(analyzeCmd)
+	rootCmd.AddCommand(backtestCmd)
 	rootCmd.AddCommand(watchCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(versionCmd)
