@@ -14,6 +14,13 @@ import (
 	"github.com/bullarc/bullarc/internal/webhook"
 )
 
+// signalBus is the subset of signal.Bus used by the engine.
+// It is an interface so tests can substitute a no-op bus if needed.
+type signalBus interface {
+	Publish(signals []bullarc.Signal)
+	Subscribe(ctx context.Context, filter func(bullarc.Signal) bool) <-chan bullarc.Signal
+}
+
 // Engine orchestrates analysis by coordinating indicators, data sources,
 // and LLM providers. All exported methods are safe for concurrent use.
 type Engine struct {
@@ -22,6 +29,7 @@ type Engine struct {
 	dataSources       []bullarc.DataSource
 	llmProvider       bullarc.LLMProvider
 	webhookDispatcher *webhook.Dispatcher
+	bus               signalBus
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -32,6 +40,7 @@ type Engine struct {
 func New() *Engine {
 	return &Engine{
 		indicators: make(map[string]bullarc.Indicator),
+		bus:        signal.NewBus(),
 		lookback:   200,
 		interval:   "1Day",
 	}
@@ -127,6 +136,20 @@ func (e *Engine) RegisterWebhookDispatcher(d *webhook.Dispatcher) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.webhookDispatcher = d
+}
+
+// Subscribe returns a channel that receives every signal produced by future
+// Analyze calls for the given symbol. If symbol is empty, all signals for all
+// symbols are delivered. The channel is closed when ctx is cancelled, at which
+// point the subscription is removed and its resources are reclaimed.
+//
+// Consumers do not poll — signals are pushed as each Analyze completes.
+func (e *Engine) Subscribe(ctx context.Context, symbol string) <-chan bullarc.Signal {
+	var filter func(bullarc.Signal) bool
+	if symbol != "" {
+		filter = func(s bullarc.Signal) bool { return s.Symbol == symbol }
+	}
+	return e.bus.Subscribe(ctx, filter)
 }
 
 // engineSnapshot holds a point-in-time copy of the engine's mutable fields.
@@ -230,6 +253,12 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		if err := snap.webhookDispatcher.Dispatch(ctx, result); err != nil {
 			slog.Warn("webhook dispatch failed", "symbol", req.Symbol, "err", err)
 		}
+	}
+
+	// Push signals to all active bus subscribers so consumers receive results
+	// without polling.
+	if len(result.Signals) > 0 {
+		e.bus.Publish(result.Signals)
 	}
 
 	return result, nil
