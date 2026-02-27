@@ -58,7 +58,7 @@ func IndicatorsFromConfig(cfg config.IndicatorsConfig) []bullarc.Indicator {
 			out = append(out, ind)
 			continue
 		}
-		ind := buildIndicatorFromName(name)
+		ind := BuildIndicatorFromName(name)
 		if ind != nil {
 			out = append(out, ind)
 		} else {
@@ -68,9 +68,9 @@ func IndicatorsFromConfig(cfg config.IndicatorsConfig) []bullarc.Indicator {
 	return out
 }
 
-// buildIndicatorFromName parses a name like "SMA_20" or "MACD_10_22_9" and
+// BuildIndicatorFromName parses a name like "SMA_20" or "MACD_10_22_9" and
 // constructs the corresponding indicator. Returns nil for unrecognised patterns.
-func buildIndicatorFromName(name string) bullarc.Indicator {
+func BuildIndicatorFromName(name string) bullarc.Indicator {
 	switch {
 	case name == "VWAP":
 		return indicator.NewVWAP()

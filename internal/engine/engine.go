@@ -76,6 +76,11 @@ func (e *Engine) RegisterLLMProvider(llm bullarc.LLMProvider) {
 	e.llmProvider = llm
 }
 
+// SetInterval updates the data interval used when fetching bars.
+func (e *Engine) SetInterval(interval string) {
+	e.interval = interval
+}
+
 // RegisterWebhookDispatcher attaches a webhook dispatcher that receives each
 // AnalysisResult immediately after Analyze completes. Dispatch errors are
 // logged but do not affect the returned result.
