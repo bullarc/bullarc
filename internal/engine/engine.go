@@ -8,6 +8,7 @@ import (
 
 	"github.com/bullarc/bullarc"
 	"github.com/bullarc/bullarc/internal/config"
+	"github.com/bullarc/bullarc/internal/llm"
 	"github.com/bullarc/bullarc/internal/signal"
 	"github.com/bullarc/bullarc/internal/webhook"
 )
@@ -132,6 +133,15 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		"confidence", composite.Confidence,
 		"signals", len(indSignals))
 
+	if req.UseLLM && e.llmProvider != nil {
+		explanation, llmErr := e.explainResult(ctx, result)
+		if llmErr != nil {
+			slog.Warn("llm explanation failed", "symbol", req.Symbol, "err", llmErr)
+		} else {
+			result.LLMAnalysis = explanation
+		}
+	}
+
 	if e.webhookDispatcher != nil {
 		if err := e.webhookDispatcher.Dispatch(ctx, result); err != nil {
 			slog.Warn("webhook dispatch failed", "symbol", req.Symbol, "err", err)
@@ -139,6 +149,18 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 	}
 
 	return result, nil
+}
+
+// explainResult calls the LLM provider to generate a plain English explanation
+// of the analysis result.
+func (e *Engine) explainResult(ctx context.Context, result bullarc.AnalysisResult) (string, error) {
+	prompt := llm.AnalysisPrompt(result)
+	resp, err := e.llmProvider.Complete(ctx, bullarc.LLMRequest{Prompt: prompt, MaxTokens: 512})
+	if err != nil {
+		return "", err
+	}
+	slog.Info("llm explanation generated", "symbol", result.Symbol, "tokens", resp.TokensUsed, "model", resp.Model)
+	return resp.Text, nil
 }
 
 func (e *Engine) fetchBars(ctx context.Context, symbol string) ([]bullarc.OHLCV, error) {

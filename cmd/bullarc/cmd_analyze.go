@@ -10,6 +10,7 @@ import (
 	"github.com/bullarc/bullarc/internal/config"
 	"github.com/bullarc/bullarc/internal/datasource"
 	"github.com/bullarc/bullarc/internal/engine"
+	"github.com/bullarc/bullarc/internal/llm"
 )
 
 var analyzeCmd = &cobra.Command{
@@ -22,6 +23,7 @@ var (
 	analyzeSymbol string
 	analyzeConfig string
 	analyzeCSV    string
+	analyzeLLM    bool
 )
 
 func init() {
@@ -29,6 +31,7 @@ func init() {
 	_ = analyzeCmd.MarkFlagRequired("symbol")
 	analyzeCmd.Flags().StringVarP(&analyzeConfig, "config", "c", "", "path to config file")
 	analyzeCmd.Flags().StringVar(&analyzeCSV, "csv", "", "path to CSV file for local data")
+	analyzeCmd.Flags().BoolVar(&analyzeLLM, "llm", false, "generate plain English explanation via LLM")
 }
 
 func runAnalyze(cmd *cobra.Command, _ []string) error {
@@ -36,7 +39,7 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	result, err := e.Analyze(cmd.Context(), bullarc.AnalysisRequest{Symbol: analyzeSymbol})
+	result, err := e.Analyze(cmd.Context(), bullarc.AnalysisRequest{Symbol: analyzeSymbol, UseLLM: analyzeLLM})
 	if err != nil {
 		return fmt.Errorf("analyze: %w", err)
 	}
@@ -70,6 +73,9 @@ func buildEngine(cfgPath, csvPath string) (*engine.Engine, error) {
 				opts...,
 			))
 		}
+		if cfg.LLM.APIKey != "" {
+			e.RegisterLLMProvider(llm.NewAnthropicProvider(cfg.LLM.APIKey, cfg.LLM.Model))
+		}
 	} else {
 		e = engine.New()
 		for _, ind := range engine.DefaultIndicators() {
@@ -93,4 +99,7 @@ func printResult(result bullarc.AnalysisResult) {
 	composite := result.Signals[0]
 	fmt.Printf("signal:    %s (confidence=%.0f%%)\n", composite.Type, composite.Confidence)
 	fmt.Printf("summary:   %s\n", composite.Explanation)
+	if result.LLMAnalysis != "" {
+		fmt.Printf("\nexplanation:\n%s\n", result.LLMAnalysis)
+	}
 }
