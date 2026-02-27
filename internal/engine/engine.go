@@ -32,6 +32,7 @@ type Engine struct {
 	sentimentScorer      *llm.SentimentScorer
 	newsSentimentWeight  float64
 	llmMetaSignalWeight  float64
+	multiStepMode        bool
 	webhookDispatcher    *webhook.Dispatcher
 	bus                  signalBus
 	// lookback is the number of calendar days of history to request per analysis.
@@ -144,6 +145,16 @@ func (e *Engine) SetLLMMetaSignalWeight(w float64) {
 	e.llmMetaSignalWeight = w
 }
 
+// SetMultiStepMode enables or disables multi-step LLM analysis. When enabled and
+// UseLLM is true, the engine runs a three-step chain (technical thesis → news thesis
+// → synthesis) instead of the single-call LLM meta-signal. Only one mode runs per
+// analysis. The synthesis reasoning is stored in AnalysisResult.LLMAnalysis.
+func (e *Engine) SetMultiStepMode(enabled bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.multiStepMode = enabled
+}
+
 // SetInterval updates the data interval used when fetching bars.
 func (e *Engine) SetInterval(interval string) {
 	e.mu.Lock()
@@ -204,6 +215,7 @@ type engineSnapshot struct {
 	sentimentScorer     *llm.SentimentScorer
 	newsSentimentWeight float64
 	llmMetaSignalWeight float64
+	multiStepMode       bool
 	webhookDispatcher   *webhook.Dispatcher
 	lookback            int
 	interval            string
@@ -221,6 +233,7 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 		sentimentScorer:     e.sentimentScorer,
 		newsSentimentWeight: e.newsSentimentWeight,
 		llmMetaSignalWeight: e.llmMetaSignalWeight,
+		multiStepMode:       e.multiStepMode,
 		webhookDispatcher:   e.webhookDispatcher,
 		lookback:            e.lookback,
 		interval:            e.interval,
@@ -281,16 +294,45 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		}
 	}
 
+	// Collect scored headlines when multi-step mode is active so they can be
+	// passed to the news thesis step of the chain. In non-multi-step mode the
+	// standard news sentiment signal path is used instead.
+	var multiStepHeadlines []llm.ScoredHeadline
 	if snap.newsSource != nil && snap.sentimentScorer != nil {
-		if newsSig, ok := e.generateNewsSentimentSignal(ctx, req.Symbol, snap); ok {
-			indSignals = append(indSignals, newsSig)
+		if snap.multiStepMode && req.UseLLM && snap.llmProvider != nil {
+			newsSig, headlines, ok := e.generateNewsSentimentWithHeadlines(ctx, req.Symbol, snap)
+			if ok {
+				indSignals = append(indSignals, newsSig)
+			}
+			multiStepHeadlines = headlines
+		} else {
+			if newsSig, ok := e.generateNewsSentimentSignal(ctx, req.Symbol, snap); ok {
+				indSignals = append(indSignals, newsSig)
+			}
 		}
 	}
 
+	// Multi-step analysis chain and single-call meta-signal are mutually exclusive.
+	// Only one runs per analysis invocation.
 	if req.UseLLM && snap.llmProvider != nil {
 		prelimComposite := signal.Aggregate(req.Symbol, indSignals)
-		if llmSig, ok := e.generateLLMMetaSignal(ctx, req.Symbol, result.IndicatorValues, prelimComposite, latestBar.Close, snap); ok {
-			indSignals = append(indSignals, llmSig)
+		if snap.multiStepMode {
+			if chainSig, reasoning, ok := llm.RunMultiStepChain(
+				ctx, req.Symbol, result.IndicatorValues, prelimComposite,
+				latestBar.Close, multiStepHeadlines, snap.llmProvider,
+			); ok {
+				chainSig = applySignalWeight(chainSig, snap.llmMetaSignalWeight)
+				indSignals = append(indSignals, chainSig)
+				result.LLMAnalysis = reasoning
+				slog.Info("multi-step chain complete",
+					"symbol", req.Symbol,
+					"signal", chainSig.Type,
+					"confidence", chainSig.Confidence)
+			}
+		} else {
+			if llmSig, ok := e.generateLLMMetaSignal(ctx, req.Symbol, result.IndicatorValues, prelimComposite, latestBar.Close, snap); ok {
+				indSignals = append(indSignals, llmSig)
+			}
 		}
 	}
 
@@ -303,7 +345,11 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 		"confidence", composite.Confidence,
 		"signals", len(indSignals))
 
-	if req.UseLLM && snap.llmProvider != nil {
+	// In multi-step mode the synthesis reasoning already populates LLMAnalysis.
+	// If the chain failed entirely, LLMAnalysis is left empty (acceptance criteria:
+	// "if step 1 fails, omit LLM analysis entirely"). The single-call explainer
+	// only runs in non-multi-step mode.
+	if req.UseLLM && snap.llmProvider != nil && !snap.multiStepMode {
 		explanation, llmErr := e.explainResultWithProvider(ctx, result, snap.llmProvider)
 		if llmErr != nil {
 			slog.Warn("llm explanation failed", "symbol", req.Symbol, "err", llmErr)
@@ -431,6 +477,97 @@ func (e *Engine) generateLLMMetaSignal(
 		"confidence", sig.Confidence,
 		"weight", snap.llmMetaSignalWeight)
 	return sig, true
+}
+
+// generateNewsSentimentWithHeadlines fetches and scores news articles, returning
+// both the aggregated sentiment signal and the individual ScoredHeadlines for
+// use in the multi-step analysis chain. The signal may be absent (ok=false) if
+// no articles are available or scoring fails, but headlines may still be
+// non-empty if scoring succeeded but the signal could not be derived.
+func (e *Engine) generateNewsSentimentWithHeadlines(
+	ctx context.Context,
+	symbol string,
+	snap engineSnapshot,
+) (sig bullarc.Signal, headlines []llm.ScoredHeadline, sigOK bool) {
+	since := time.Now().Add(-24 * time.Hour)
+	articles, err := snap.newsSource.FetchNews(ctx, []string{symbol}, since)
+	if err != nil {
+		slog.Warn("news fetch failed, skipping news sentiment", "symbol", symbol, "err", err)
+		return bullarc.Signal{}, nil, false
+	}
+	if len(articles) == 0 {
+		slog.Info("no recent news for symbol, skipping news sentiment", "symbol", symbol)
+		return bullarc.Signal{}, nil, false
+	}
+
+	results, err := snap.sentimentScorer.ScoreArticles(ctx, articles)
+	if err != nil {
+		slog.Warn("sentiment scoring failed, skipping news sentiment", "symbol", symbol, "err", err)
+		return bullarc.Signal{}, nil, false
+	}
+
+	// Build scored headlines for the multi-step chain and a lookup for the signal builder.
+	articleByID := make(map[string]bullarc.NewsArticle, len(articles))
+	for _, a := range articles {
+		articleByID[a.ID] = a
+	}
+
+	scored := make([]signal.ScoredArticle, 0, len(results))
+	headlines = make([]llm.ScoredHeadline, 0, len(results))
+	for _, r := range results {
+		a, ok := articleByID[r.ArticleID]
+		if !ok {
+			continue
+		}
+		scored = append(scored, signal.ScoredArticle{
+			Sentiment:  string(r.Sentiment),
+			Confidence: r.Confidence,
+		})
+		headlines = append(headlines, llm.ScoredHeadline{
+			Headline:   a.Headline,
+			Sentiment:  string(r.Sentiment),
+			Confidence: r.Confidence,
+		})
+	}
+
+	newsSig, ok := signal.NewsSentimentSignal(symbol, scored)
+	if !ok {
+		return bullarc.Signal{}, headlines, false
+	}
+
+	if snap.newsSentimentWeight != 1.0 {
+		newsSig.Confidence = newsSig.Confidence * snap.newsSentimentWeight
+		if newsSig.Confidence > 100 {
+			newsSig.Confidence = 100
+		}
+		if newsSig.Confidence < 0 {
+			newsSig.Confidence = 0
+		}
+	}
+
+	slog.Info("news sentiment signal generated",
+		"symbol", symbol,
+		"type", newsSig.Type,
+		"confidence", newsSig.Confidence,
+		"articles", len(scored))
+
+	return newsSig, headlines, true
+}
+
+// applySignalWeight scales a signal's confidence by the given weight multiplier
+// and clamps the result to [0, 100].
+func applySignalWeight(sig bullarc.Signal, weight float64) bullarc.Signal {
+	if weight == 1.0 {
+		return sig
+	}
+	sig.Confidence = sig.Confidence * weight
+	if sig.Confidence > 100 {
+		sig.Confidence = 100
+	}
+	if sig.Confidence < 0 {
+		sig.Confidence = 0
+	}
+	return sig
 }
 
 // detectAnomalies calls the LLM to identify divergences and anomalies in the
