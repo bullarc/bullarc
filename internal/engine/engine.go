@@ -24,15 +24,16 @@ type signalBus interface {
 // Engine orchestrates analysis by coordinating indicators, data sources,
 // and LLM providers. All exported methods are safe for concurrent use.
 type Engine struct {
-	mu                sync.RWMutex
-	indicators        map[string]bullarc.Indicator
-	dataSources       []bullarc.DataSource
-	llmProvider       bullarc.LLMProvider
-	newsSource        bullarc.NewsSource
-	sentimentScorer   *llm.SentimentScorer
-	newsSentimentWeight float64
-	webhookDispatcher *webhook.Dispatcher
-	bus               signalBus
+	mu                   sync.RWMutex
+	indicators           map[string]bullarc.Indicator
+	dataSources          []bullarc.DataSource
+	llmProvider          bullarc.LLMProvider
+	newsSource           bullarc.NewsSource
+	sentimentScorer      *llm.SentimentScorer
+	newsSentimentWeight  float64
+	llmMetaSignalWeight  float64
+	webhookDispatcher    *webhook.Dispatcher
+	bus                  signalBus
 	// lookback is the number of calendar days of history to request per analysis.
 	lookback int
 	// interval is the default bar interval passed to the data source.
@@ -47,6 +48,7 @@ func New() *Engine {
 		lookback:            200,
 		interval:            "1Day",
 		newsSentimentWeight: 1.0,
+		llmMetaSignalWeight: 2.0,
 	}
 }
 
@@ -131,6 +133,17 @@ func (e *Engine) SetNewsSentimentWeight(w float64) {
 	e.newsSentimentWeight = w
 }
 
+// SetLLMMetaSignalWeight sets the weight multiplier applied to the confidence
+// of the LLM meta-signal before it participates in aggregation.
+// The default is 2.0, giving the LLM meta-signal twice the voting power of
+// a single technical indicator to reflect its synthesized nature.
+// Values < 1.0 reduce its influence; setting it to 0 effectively disables it.
+func (e *Engine) SetLLMMetaSignalWeight(w float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.llmMetaSignalWeight = w
+}
+
 // SetInterval updates the data interval used when fetching bars.
 func (e *Engine) SetInterval(interval string) {
 	e.mu.Lock()
@@ -190,6 +203,7 @@ type engineSnapshot struct {
 	newsSource          bullarc.NewsSource
 	sentimentScorer     *llm.SentimentScorer
 	newsSentimentWeight float64
+	llmMetaSignalWeight float64
 	webhookDispatcher   *webhook.Dispatcher
 	lookback            int
 	interval            string
@@ -206,6 +220,7 @@ func (e *Engine) snapshot(indicatorNames []string) engineSnapshot {
 		newsSource:          e.newsSource,
 		sentimentScorer:     e.sentimentScorer,
 		newsSentimentWeight: e.newsSentimentWeight,
+		llmMetaSignalWeight: e.llmMetaSignalWeight,
 		webhookDispatcher:   e.webhookDispatcher,
 		lookback:            e.lookback,
 		interval:            e.interval,
@@ -269,6 +284,13 @@ func (e *Engine) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bull
 	if snap.newsSource != nil && snap.sentimentScorer != nil {
 		if newsSig, ok := e.generateNewsSentimentSignal(ctx, req.Symbol, snap); ok {
 			indSignals = append(indSignals, newsSig)
+		}
+	}
+
+	if req.UseLLM && snap.llmProvider != nil {
+		prelimComposite := signal.Aggregate(req.Symbol, indSignals)
+		if llmSig, ok := e.generateLLMMetaSignal(ctx, req.Symbol, result.IndicatorValues, prelimComposite, latestBar.Close, snap); ok {
+			indSignals = append(indSignals, llmSig)
 		}
 	}
 
@@ -366,6 +388,44 @@ func (e *Engine) generateNewsSentimentSignal(ctx context.Context, symbol string,
 		"type", sig.Type,
 		"confidence", sig.Confidence,
 		"articles", len(scored))
+	return sig, true
+}
+
+// generateLLMMetaSignal calls the LLM to synthesize all indicator values and the
+// preliminary composite signal into a structured BUY/SELL/HOLD meta-signal.
+// The signal confidence is scaled by snap.llmMetaSignalWeight before being stored so
+// that the meta-signal participates in aggregation with the configured influence.
+// Returns (zero, false) when the LLM call fails or returns an invalid response,
+// in which case the analysis continues without the meta-signal.
+func (e *Engine) generateLLMMetaSignal(
+	ctx context.Context,
+	symbol string,
+	indicatorValues map[string][]bullarc.IndicatorValue,
+	prelimComposite bullarc.Signal,
+	currentPrice float64,
+	snap engineSnapshot,
+) (bullarc.Signal, bool) {
+	sig, ok := llm.GenerateMetaSignal(ctx, symbol, indicatorValues, prelimComposite, currentPrice, snap.llmProvider)
+	if !ok {
+		slog.Warn("LLM meta-signal omitted due to error or invalid response", "symbol", symbol)
+		return bullarc.Signal{}, false
+	}
+
+	if snap.llmMetaSignalWeight != 1.0 {
+		sig.Confidence = sig.Confidence * snap.llmMetaSignalWeight
+		if sig.Confidence > 100 {
+			sig.Confidence = 100
+		}
+		if sig.Confidence < 0 {
+			sig.Confidence = 0
+		}
+	}
+
+	slog.Info("LLM meta-signal generated",
+		"symbol", symbol,
+		"type", sig.Type,
+		"confidence", sig.Confidence,
+		"weight", snap.llmMetaSignalWeight)
 	return sig, true
 }
 
