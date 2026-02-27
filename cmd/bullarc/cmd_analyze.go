@@ -45,7 +45,10 @@ func init() {
 func runAnalyze(cmd *cobra.Command, _ []string) error {
 	symbols := resolveSymbols(analyzeSymbol, analyzeSymbols)
 	if len(symbols) == 0 {
-		return fmt.Errorf("provide --symbol or --symbols")
+		symbols = loadWatchlistFromKeystore()
+	}
+	if len(symbols) == 0 {
+		return fmt.Errorf("provide --symbol or --symbols, or configure a default watchlist with `bullarc configure --watchlist AAPL,MSFT`")
 	}
 
 	e, err := buildEngine(analyzeConfig, analyzeCSV, analyzeLLMKey, analyzeAlpacaKey, analyzeAlpacaSecret)

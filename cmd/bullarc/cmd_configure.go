@@ -24,17 +24,19 @@ var (
 	configureLLMKey       string
 	configureAlpacaKey    string
 	configureAlpacaSecret string
+	configureWatchlist    string
 )
 
 func init() {
 	configureCmd.Flags().StringVar(&configureLLMKey, "llm-key", "", "Anthropic API key to store persistently")
 	configureCmd.Flags().StringVar(&configureAlpacaKey, "alpaca-key", "", "Alpaca API key ID to store persistently")
 	configureCmd.Flags().StringVar(&configureAlpacaSecret, "alpaca-secret", "", "Alpaca secret key to store persistently")
+	configureCmd.Flags().StringVar(&configureWatchlist, "watchlist", "", "comma-separated default symbol watchlist (e.g. AAPL,MSFT,BTC/USD)")
 }
 
 func runConfigure(_ *cobra.Command, _ []string) error {
-	if configureLLMKey == "" && configureAlpacaKey == "" && configureAlpacaSecret == "" {
-		return fmt.Errorf("provide at least one of --llm-key, --alpaca-key, or --alpaca-secret")
+	if configureLLMKey == "" && configureAlpacaKey == "" && configureAlpacaSecret == "" && configureWatchlist == "" {
+		return fmt.Errorf("provide at least one of --llm-key, --alpaca-key, --alpaca-secret, or --watchlist")
 	}
 
 	ksPath, err := config.DefaultKeystorePath()
@@ -55,6 +57,9 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 	}
 	if configureAlpacaSecret != "" {
 		creds.AlpacaSecretKey = configureAlpacaSecret
+	}
+	if configureWatchlist != "" {
+		creds.Watchlist = parseWatchlist(configureWatchlist)
 	}
 
 	if err := config.SaveCredentials(ksPath, creds); err != nil {
