@@ -1,6 +1,10 @@
-# bullarc
+<p align="center">
+  <img src="logo.png" alt="bullarc" width="200"/>
+</p>
 
-Your terminal is now a trading desk.
+<h1 align="center">bullarc</h1>
+
+<p align="center">Your terminal is now a trading desk.</p>
 
 bullarc fuses price technicals, news sentiment, social velocity, on-chain flows,
 whale alerts, and options activity into a single BUY/SELL/HOLD signal — powered
@@ -215,4 +219,4 @@ docker run --rm \
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
