@@ -1,20 +1,149 @@
 # bullarc
 
-A modular technical analysis engine in Go. Computes indicators from OHLCV data,
-generates buy/sell/hold signals with confidence scores, and optionally routes
-results through an LLM for plain-English explanation. Exposes capabilities as a
-CLI, a Go SDK, and an MCP server.
+Your terminal is now a trading desk.
 
-**Status:** Core architecture and interfaces are complete. Indicator implementations
-(SMA, EMA, RSI, MACD, Bollinger Bands) and data source adapters (Polygon, Alpaca)
-are in progress.
+bullarc fuses price technicals, news sentiment, social velocity, on-chain flows,
+whale alerts, and options activity into a single BUY/SELL/HOLD signal — powered
+by 11 indicators and AI-driven confidence scoring.
+
+![bullarc demo](demo.gif)
+
+## Quick Start
+
+```bash
+# Install
+go install github.com/bullarc/bullarc/cmd/bullarc@latest
+
+# Run the built-in demo (zero config, embedded data)
+bullarc demo
+```
+
+No API keys, no config files, no data downloads. Results in under a second.
+
+## What Can It Do?
+
+**Analyze** — 6 data layers, 11 indicators, 1 composite signal
+
+```bash
+bullarc analyze --symbol AAPL --llm
+```
+
+**Backtest** — replay strategies on historical data
+
+```bash
+bullarc backtest --csv data.csv --indicators RSI_14,MACD_12_26_9,SuperTrend_7_3.0
+```
+
+**Paper trade** — auto-execute with real market data, simulated money
+
+```bash
+bullarc paper trade --symbol AAPL --confidence 70
+```
+
+**AI review** — Claude analyzes your trading patterns after 20+ trades
+
+```bash
+bullarc journal review
+```
+
+**MCP server** — let Claude be your analyst in Claude Desktop or Cursor
+
+```bash
+bullarc mcp
+```
+
+## Features
+
+- **11 technical indicators**: SMA, EMA, RSI, MACD, Bollinger Bands, SuperTrend, Stochastic, ATR, VWAP, OBV
+- **Multi-source signal fusion**: price + news sentiment + Reddit social velocity + on-chain crypto flows + whale alerts + options activity
+- **AI-powered analysis**: LLM-driven signal explanation, market regime detection, anomaly detection, portfolio correlation
+- **Backtesting**: historical replay with simulated returns, max drawdown, win rate
+- **Paper trading**: auto-execute via Alpaca with configurable confidence threshold
+- **Trade journal**: log every trade, query by filters, AI-powered pattern review
+- **MCP server**: 10 tools for Claude Desktop / Cursor integration
+- **Go SDK**: embed analysis in your own applications
+- **Zero-config demo**: embedded sample data, works out of the box
+
+## Data Sources
+
+| Source | Type | Auth |
+|--------|------|------|
+| **Massive** (formerly Polygon.io) | Equities, crypto, options | API key |
+| **Alpaca** | Equities, crypto, paper trading | API key + secret |
+| **CSV / JSON** | Local files | None |
+| **Reddit (Tradestie)** | Social sentiment | None |
+| **Glassnode** | On-chain crypto metrics | API key |
+| **WhaleAlert** | Large crypto transfers | API key |
+| **Polygon Options** | Unusual options activity | API key |
+| **Alpaca News** | News articles | API key |
+
+## Setup
+
+```bash
+# Store credentials once (optional — works without any keys via CSV mode)
+bullarc configure --llm-key $ANTHROPIC_API_KEY
+
+# With live market data
+bullarc configure --llm-key $ANTHROPIC_API_KEY --watchlist AAPL,MSFT,TSLA,BTC/USD
+```
+
+Or use a config file:
+
+```yaml
+data_sources:
+  default: massive
+  massive:
+    enabled: true
+    api_key: "${MASSIVE_API_KEY}"
+
+llm:
+  provider: anthropic
+  api_key: "${ANTHROPIC_API_KEY}"
+  model: claude-opus-4-6
+```
+
+Credential resolution order: flags > env vars > keystore (`~/.config/bullarc/credentials`) > config file.
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `bullarc demo` | Zero-config demo with embedded data |
+| `bullarc analyze` | One-shot analysis (single or multi-symbol) |
+| `bullarc backtest` | Backtest strategy on historical CSV |
+| `bullarc watch` | Continuous polling with live signals |
+| `bullarc paper trade` | Auto paper trading via Alpaca |
+| `bullarc paper positions` | List open paper positions |
+| `bullarc paper close-all` | Close all paper positions |
+| `bullarc journal list` | List closed trades |
+| `bullarc journal query` | Filter trades by symbol, date, winners/losers |
+| `bullarc journal review` | AI-powered trade pattern review |
+| `bullarc mcp` | Start MCP server for Claude Desktop / Cursor |
+| `bullarc configure` | Store credentials and watchlist |
+| `bullarc version` | Print version |
+
+## MCP Server
+
+```bash
+bullarc mcp
+```
+
+Exposes 10 tools over JSON-RPC 2.0 stdio:
+
+| Tool | Description |
+|------|-------------|
+| `get_signals` | Analyze symbols, return composite signal + confidence |
+| `backtest_strategy` | Run backtest on CSV, return summary stats |
+| `list_indicators` | List all registered indicator metadata |
+| `explain_signal` | LLM explanation of trading signal |
+| `stream_signals` | Push-based signal delivery |
+| `explain_backtest` | Backtest + AI explanation of performance |
+| `get_news_sentiment` | Fetch and score news sentiment |
+| `get_risk_metrics` | ATR-based position sizing and stop-loss |
+| `analyze_with_ai` | Multi-step LLM reasoning |
+| `compare_symbols` | Compare signals across multiple symbols |
 
 ## Architecture
-
-The design follows a strict dependency rule: all shared types and interfaces live
-in the root package (`github.com/bullarc/bullarc`). Internal packages implement
-those interfaces but never import each other. Only `internal/engine` is permitted
-to import multiple internal packages, which is where they get wired together.
 
 ```
 bullarc.go               # All interfaces and types. The API contract.
@@ -24,200 +153,65 @@ internal/indicator/      # Pure computation. No I/O, no imports from other inter
 internal/datasource/     # Market data fetching. Implements DataSource interface.
 internal/llm/            # LLM adapters. Implements LLMProvider interface.
 internal/signal/         # Aggregates indicator outputs into Signal values.
-internal/config/         # Config struct with YAML/JSON tags. Loader not yet wired.
-internal/mcp/            # MCP server: exposes get_signals, explain_signal, etc.
+internal/config/         # Config loading and credential storage.
+internal/mcp/            # MCP server: JSON-RPC 2.0 over stdio.
+internal/journal/        # Trade journal logging and querying.
 pkg/sdk/                 # Public Go SDK. Wraps the engine behind a stable surface.
-testutil/                # Shared test helpers: MakeBars, LoadBarsFromCSV, float assertions.
-testdata/                # CSV fixtures and reference_values.json for indicator correctness.
+testutil/                # Shared test helpers.
+testdata/                # CSV fixtures and reference values.
 ```
 
-The separation between `internal/indicator` and `internal/signal` is intentional.
-Indicators are pure mathematical functions over bars — they have no opinion on what
-the signal should be. Signal generation is a separate concern that aggregates
-multiple indicator outputs, applies weighting, and produces a typed `Signal` with
-a confidence score. This makes it straightforward to test each layer independently.
+All shared types and interfaces live in the root package. Internal packages
+implement those interfaces but never import each other. Only `internal/engine`
+wires them together.
 
-The `pkg/sdk` package exists because `internal/engine` is not a stable public API —
-it can change as the wiring evolves. The SDK is the surface external consumers
-should depend on.
-
-## Error handling
-
-Errors are typed sentinel values with machine-readable codes:
+## Go SDK
 
 ```go
-var ErrInsufficientData = &Error{Code: "INSUFFICIENT_DATA", ...}
+client := sdk.New(engine)
+
+// One-shot analysis
+result, err := client.Analyze(ctx, bullarc.AnalysisRequest{Symbol: "AAPL", UseLLM: true})
+
+// Backtest
+result, err := client.Backtest(ctx, bullarc.BacktestRequest{Symbol: "AAPL", Bars: bars})
+
+// Stream signals (polling)
+ch := client.StreamSymbols(ctx, []string{"AAPL", "MSFT"}, 5*time.Minute)
+for sig := range ch {
+    // sig.Type, sig.Confidence, sig.Symbol
+}
+
+// Push-based subscription
+ch := client.Subscribe(ctx, bullarc.AnalysisRequest{Symbol: "AAPL"})
 ```
-
-Callers can wrap them with context while preserving the type:
-
-```go
-return bullarc.ErrInsufficientData.Wrap(fmt.Errorf("need %d bars, got %d", needed, got))
-```
-
-And check by unwrapping:
-
-```go
-if errors.Is(err, bullarc.ErrInsufficientData) { ... }
-```
-
-Raw `errors.New` from public APIs is not permitted. This makes error handling at
-the engine level uniform regardless of which indicator or data source originated
-the failure.
-
-## Data model
-
-The core type is `OHLCV` (Open, High, Low, Close, Volume), aliased as `Bar`.
-`IndicatorValue` carries a timestamp, a primary float value, and an `Extra` map
-for indicators that produce multiple outputs (e.g., MACD produces `macd`,
-`signal`, and `histogram`).
-
-`Signal` carries a `Confidence` float (0.0–1.0), the indicator that produced it,
-and an `Explanation` string populated when LLM analysis is enabled.
-
-## Docker
-
-Run the CLI with a single command — no Go installation or local setup required:
-
-```bash
-docker run --rm \
-  -e ALPACA_API_KEY=<key-id> \
-  -e ALPACA_SECRET_KEY=<secret> \
-  ghcr.io/bullarc/bullarc:latest watch -s AAPL
-```
-
-To include LLM analysis, add `ANTHROPIC_API_KEY`:
-
-```bash
-docker run --rm \
-  -e ALPACA_API_KEY=<key-id> \
-  -e ALPACA_SECRET_KEY=<secret> \
-  -e ANTHROPIC_API_KEY=<anthropic-key> \
-  ghcr.io/bullarc/bullarc:latest analyze --symbol AAPL --llm
-```
-
-**Building the image locally:**
-
-```bash
-make docker-build                     # builds bullarc:latest
-docker build -t bullarc:dev .         # equivalent one-liner
-```
-
-**Image size:** The multi-stage build produces an Alpine-based image.
-Target size: under 50 MB (typical: ~20–25 MB — Go binary ≈ 14 MB, Alpine base ≈ 8 MB).
-
-The image bundles all dependencies. No host-level Go installation is needed.
-
-## Requirements
-
-- Go 1.22+
-- `golangci-lint` for linting (`brew install golangci-lint`)
-- API keys for data sources and LLM providers (via environment variables or config file)
 
 ## Build
 
 ```bash
 make build       # Produces bin/bullarc
+make test        # All tests with race detector
 make check       # fmt + vet + test
-make verify      # Build all packages + run smoke tests
+make verify      # Build all + smoke tests
 make lint        # golangci-lint
+make demo        # Run the built-in demo
+make demo-gif    # Generate demo.gif (requires VHS)
 ```
 
-**Note on CGO:** Go 1.22 on macOS 15+ has a dyld incompatibility with the race
-detector. Run tests with `CGO_ENABLED=0`:
+## Docker
 
 ```bash
-CGO_ENABLED=0 go test -count=1 ./...
+docker run --rm \
+  -e ALPACA_API_KEY=<key-id> \
+  -e ALPACA_SECRET_KEY=<secret> \
+  -e ANTHROPIC_API_KEY=<key> \
+  ghcr.io/bullarc/bullarc:latest analyze --symbol AAPL --llm
 ```
 
-The `make test` target handles this automatically.
+## Requirements
 
-## Testing
-
-Tests use `testify` for assertions and the `testutil` package for shared helpers.
-
-```bash
-make test        # All tests
-make test-v      # Verbose
-```
-
-Reference values for indicator correctness are in `testdata/reference_values.json`.
-These were computed independently and serve as the ground truth for regression
-testing — if an indicator implementation drifts, the tests catch it by index.
-Test fixtures are real OHLCV data in `testdata/ohlcv_100.csv`.
-
-Indicator tests follow the pattern:
-
-```go
-func TestSMA_InsufficientData(t *testing.T) {
-    bars := testutil.MakeBars(1.0, 2.0) // fewer than period
-    _, err := sma.Compute(bars)
-    require.ErrorIs(t, err, bullarc.ErrInsufficientData)
-}
-
-func TestSMA_KnownValues(t *testing.T) {
-    bars := testutil.LoadBarsFromCSV(t, "ohlcv_100.csv")
-    vals, err := sma.Compute(bars)
-    require.NoError(t, err)
-    testutil.AssertFloatEqual(t, 156.017857, vals[0].Value, 1e-4)
-}
-```
-
-Smoke tests (prefixed `TestSmoke_`) are the subset run by `make verify` — fast
-checks that interfaces, types, and error contracts are intact before any
-integration work.
-
-## Adding an indicator
-
-1. Create `internal/indicator/name.go` implementing `bullarc.Indicator`.
-2. Create `internal/indicator/name_test.go`. Test insufficient data, known values
-   from `reference_values.json`, and edge cases.
-3. Register in `internal/engine/defaults.go`.
-4. `make check`.
-
-The `Compute` method must be pure — no side effects, no I/O, no logging. It takes
-a slice of bars and returns a slice of `IndicatorValue`. The output length is
-`len(bars) - warmupPeriod + 1`; callers should not have to guess.
-
-## Configuration
-
-Config is YAML or JSON, matching the `Config` struct in `internal/config/config.go`.
-API keys can also be provided via environment variables (preferred for secrets).
-
-```yaml
-engine:
-  default_symbol: AAPL
-  default_interval: 1d
-  timeout: 30s
-  max_bars: 500
-
-data_sources:
-  default: polygon
-  polygon:
-    enabled: true
-    api_key: ${POLYGON_API_KEY}
-
-llm:
-  provider: anthropic
-  model: claude-opus-4-6
-  api_key: ${ANTHROPIC_API_KEY}
-  max_tokens: 1024
-  temperature: 0.2
-
-mcp:
-  enabled: false
-  address: :8080
-```
-
-## MCP server
-
-bullarc exposes an MCP server for integration with LLM tool ecosystems (Claude
-Desktop, Cursor, etc.). Tools: `get_signals`, `explain_signal`, `list_indicators`,
-`backtest_strategy`.
-
-```bash
-bullarc mcp --address :8080
-```
+- Go 1.22+
+- API keys for data sources and LLM providers (optional — CSV mode works without any)
 
 ## License
 

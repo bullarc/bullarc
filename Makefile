@@ -1,7 +1,7 @@
 DOCKER_IMAGE ?= bullarc
 DOCKER_TAG   ?= latest
 
-.PHONY: build test test-v lint fmt vet clean check verify docker-build docker-run
+.PHONY: build test test-v lint fmt vet clean check verify demo demo-gif docker-build docker-run
 
 build:
 	go build -o bin/bullarc ./cmd/bullarc
@@ -29,6 +29,13 @@ check: fmt vet test
 verify:
 	go build ./...
 	go test -race -count=1 -run TestSmoke ./...
+
+demo: build
+	./bin/bullarc demo
+
+demo-gif: build
+	@command -v vhs >/dev/null 2>&1 || { echo "Install VHS: brew install charmbracelet/tap/vhs"; exit 1; }
+	PATH="$(CURDIR)/bin:$(PATH)" vhs demo.tape
 
 # Docker targets
 docker-build:
