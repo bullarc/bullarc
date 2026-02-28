@@ -15,9 +15,9 @@ import (
 	"github.com/bullarc/bullarc"
 )
 
-const massiveDefaultBaseURL = "https://api.polygon.io"
+const massiveDefaultBaseURL = "https://api.massive.com"
 
-// MassiveSource fetches historical OHLCV bars from the Massive (Polygon.io) market data API.
+// MassiveSource fetches historical OHLCV bars from the Massive market data API.
 type MassiveSource struct {
 	apiKey  string
 	baseURL string
@@ -61,7 +61,7 @@ func NewMassiveSource(apiKey string, opts ...MassiveOption) *MassiveSource {
 func (s *MassiveSource) Meta() bullarc.DataSourceMeta {
 	return bullarc.DataSourceMeta{
 		Name:        "massive",
-		Description: "Fetches historical OHLCV bars from the Massive (Polygon.io) market data API",
+		Description: "Fetches historical OHLCV bars from the Massive market data API",
 	}
 }
 

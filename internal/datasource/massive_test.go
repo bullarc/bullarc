@@ -251,12 +251,12 @@ func TestMassiveSource_Fetch_QueryParams(t *testing.T) {
 func TestMassiveSource_appendAPIKey(t *testing.T) {
 	src := NewMassiveSource("mykey")
 
-	got := src.appendAPIKey("https://api.polygon.io/v2/aggs/next?cursor=abc")
-	assert.Equal(t, "https://api.polygon.io/v2/aggs/next?cursor=abc&apiKey=mykey", got)
+	got := src.appendAPIKey("https://api.massive.com/v2/aggs/next?cursor=abc")
+	assert.Equal(t, "https://api.massive.com/v2/aggs/next?cursor=abc&apiKey=mykey", got)
 
-	got = src.appendAPIKey("https://api.polygon.io/v2/aggs/next?cursor=abc&apiKey=mykey")
-	assert.Equal(t, "https://api.polygon.io/v2/aggs/next?cursor=abc&apiKey=mykey", got)
+	got = src.appendAPIKey("https://api.massive.com/v2/aggs/next?cursor=abc&apiKey=mykey")
+	assert.Equal(t, "https://api.massive.com/v2/aggs/next?cursor=abc&apiKey=mykey", got)
 
-	got = src.appendAPIKey("https://api.polygon.io/v2/aggs/next")
-	assert.Equal(t, "https://api.polygon.io/v2/aggs/next?apiKey=mykey", got)
+	got = src.appendAPIKey("https://api.massive.com/v2/aggs/next")
+	assert.Equal(t, "https://api.massive.com/v2/aggs/next?apiKey=mykey", got)
 }

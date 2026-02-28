@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	polygonOptionsDefaultBaseURL = "https://api.polygon.io"
+	polygonOptionsDefaultBaseURL = "https://api.massive.com"
 	polygonOptionsSnapshotPath   = "/v3/snapshot/options"
 
 	// defaultPremiumThreshold is the fallback premium threshold (USD) when OptionsConfig.PremiumThreshold is zero.
@@ -29,7 +29,7 @@ const (
 	polygonOptionsPageLimit = 250
 )
 
-// PolygonOptionsSource fetches options chain data from Polygon.io and detects
+// PolygonOptionsSource fetches options chain data from Massive (formerly Polygon.io) and detects
 // unusual activity events for equity symbols.
 type PolygonOptionsSource struct {
 	apiKey  string
@@ -45,7 +45,7 @@ func WithPolygonOptionsHTTPClient(c *http.Client) PolygonOptionsOption {
 	return func(s *PolygonOptionsSource) { s.client = c }
 }
 
-// WithPolygonOptionsBaseURL overrides the Polygon.io API base URL (useful for testing).
+// WithPolygonOptionsBaseURL overrides the Massive API base URL (useful for testing).
 func WithPolygonOptionsBaseURL(u string) PolygonOptionsOption {
 	return func(s *PolygonOptionsSource) { s.baseURL = u }
 }
