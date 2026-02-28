@@ -28,7 +28,7 @@ func makeIndicatorHistory(n int) map[string][]bullarc.IndicatorValue {
 		}
 	}
 	return map[string][]bullarc.IndicatorValue{
-		"RSI_14":      rsi,
+		"RSI_14":       rsi,
 		"MACD_12_26_9": macd,
 	}
 }

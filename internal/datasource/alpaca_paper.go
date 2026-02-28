@@ -70,24 +70,24 @@ type alpacaOrderRequest struct {
 
 // alpacaOrderResponse is the response from POST /v2/orders and DELETE /v2/positions/{symbol}.
 type alpacaOrderResponse struct {
-	ID            string     `json:"id"`
-	Symbol        string     `json:"symbol"`
-	Side          string     `json:"side"`
-	Qty           string     `json:"qty"`
-	FilledQty     string     `json:"filled_qty"`
-	FilledAvgPrice *string   `json:"filled_avg_price"`
-	FilledAt      *time.Time `json:"filled_at"`
-	Status        string     `json:"status"`
+	ID             string     `json:"id"`
+	Symbol         string     `json:"symbol"`
+	Side           string     `json:"side"`
+	Qty            string     `json:"qty"`
+	FilledQty      string     `json:"filled_qty"`
+	FilledAvgPrice *string    `json:"filled_avg_price"`
+	FilledAt       *time.Time `json:"filled_at"`
+	Status         string     `json:"status"`
 }
 
 // alpacaPositionResponse is one entry from GET /v2/positions.
 type alpacaPositionResponse struct {
-	Symbol          string `json:"symbol"`
-	Qty             string `json:"qty"`
-	AvgEntryPrice   string `json:"avg_entry_price"`
-	CurrentPrice    string `json:"current_price"`
-	UnrealizedPL    string `json:"unrealized_pl"`
-	UnrealizedPLPC  string `json:"unrealized_plpc"`
+	Symbol         string `json:"symbol"`
+	Qty            string `json:"qty"`
+	AvgEntryPrice  string `json:"avg_entry_price"`
+	CurrentPrice   string `json:"current_price"`
+	UnrealizedPL   string `json:"unrealized_pl"`
+	UnrealizedPLPC string `json:"unrealized_plpc"`
 }
 
 // alpacaAccountResponse is the response from GET /v2/account.

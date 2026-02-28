@@ -90,11 +90,11 @@ func getNewsSentimentTool(b Backend) Tool {
 
 // newsSentimentOutput is the JSON shape returned by the get_news_sentiment tool.
 type newsSentimentOutput struct {
-	Symbol             string        `json:"symbol"`
-	Hours              int           `json:"hours"`
-	ArticleCount       int           `json:"article_count"`
-	AggregateSentiment string        `json:"aggregate_sentiment"`
-	AggregateScore     float64       `json:"aggregate_score"`
+	Symbol             string         `json:"symbol"`
+	Hours              int            `json:"hours"`
+	ArticleCount       int            `json:"article_count"`
+	AggregateSentiment string         `json:"aggregate_sentiment"`
+	AggregateScore     float64        `json:"aggregate_score"`
 	Headlines          []headlineItem `json:"headlines"`
 }
 

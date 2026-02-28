@@ -15,10 +15,10 @@ import (
 
 // stubBackend is a test double implementing the mcp.Backend interface.
 type stubBackend struct {
-	analyzeFunc          func(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
-	backtestCSVFunc      func(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
-	explainBacktestFunc  func(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
-	hasLLMProvider       bool
+	analyzeFunc         func(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error)
+	backtestCSVFunc     func(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
+	explainBacktestFunc func(ctx context.Context, csvPath, symbol string, indicators []string) (bullarc.BacktestResult, error)
+	hasLLMProvider      bool
 }
 
 func (s *stubBackend) Analyze(ctx context.Context, req bullarc.AnalysisRequest) (bullarc.AnalysisResult, error) {

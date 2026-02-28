@@ -180,9 +180,9 @@ type paperTradeExecutor struct {
 	journal             *journal.Journal
 
 	mu              sync.Mutex
-	stopLosses      map[string]float64                            // symbol -> stop-loss price from last BUY order
-	entryOrders     map[string]bullarc.OrderResult                // symbol -> buy order result
-	entrySignals    map[string]bullarc.Signal                     // symbol -> entry signal
+	stopLosses      map[string]float64                             // symbol -> stop-loss price from last BUY order
+	entryOrders     map[string]bullarc.OrderResult                 // symbol -> buy order result
+	entrySignals    map[string]bullarc.Signal                      // symbol -> entry signal
 	entryIndicators map[string]map[string][]bullarc.IndicatorValue // symbol -> indicator values at entry
 }
 

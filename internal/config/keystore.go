@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	keystoreDir  = "bullarc"
-	keystoreFile = "credentials"
-	keystorePerm = 0o600
+	keystoreDir     = "bullarc"
+	keystoreFile    = "credentials"
+	keystorePerm    = 0o600
 	keystoreDirPerm = 0o700
 )
 

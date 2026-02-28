@@ -112,9 +112,9 @@ func TestBus_SignalsDeliveredInOrder(t *testing.T) {
 	sigs := make([]bullarc.Signal, n)
 	for i := range sigs {
 		sigs[i] = bullarc.Signal{
-			Type:      bullarc.SignalBuy,
-			Symbol:    "AAPL",
-			Indicator: "test",
+			Type:       bullarc.SignalBuy,
+			Symbol:     "AAPL",
+			Indicator:  "test",
 			Confidence: float64(i),
 		}
 	}

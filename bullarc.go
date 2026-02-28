@@ -310,12 +310,12 @@ type OrderResult struct {
 
 // Position represents an open paper trading position with unrealized P&L.
 type Position struct {
-	Symbol           string    `json:"symbol"`
-	Qty              float64   `json:"qty"`
-	AvgEntryPrice    float64   `json:"avg_entry_price"`
-	CurrentPrice     float64   `json:"current_price"`
-	UnrealizedPnL    float64   `json:"unrealized_pl"`
-	UnrealizedPnLPct float64   `json:"unrealized_plpc"`
+	Symbol           string  `json:"symbol"`
+	Qty              float64 `json:"qty"`
+	AvgEntryPrice    float64 `json:"avg_entry_price"`
+	CurrentPrice     float64 `json:"current_price"`
+	UnrealizedPnL    float64 `json:"unrealized_pl"`
+	UnrealizedPnLPct float64 `json:"unrealized_plpc"`
 }
 
 // PaperTrader manages simulated trades via the Alpaca paper trading API.

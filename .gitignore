@@ -37,9 +37,12 @@ config.yaml
 .status/
 .logs/
 .prompts/
+.worktrees/
+.reviews/
 
 # Local orchestration (not part of the project)
 run-backlog.sh
+review-backlog.sh
 setup-accounts.sh
 BACKLOG.md
 BACKLOG-REVIEW.md

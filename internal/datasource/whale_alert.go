@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	whaleAlertDefaultBaseURL  = "https://api.whale-alert.io"
+	whaleAlertDefaultBaseURL   = "https://api.whale-alert.io"
 	whaleAlertTransactionsPath = "/v1/transactions"
 
 	// whaleAlertMinUSD is the minimum USD transaction value reported as a whale alert.

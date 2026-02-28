@@ -332,8 +332,8 @@ func TestNewEntry(t *testing.T) {
 	assert.Equal(t, 150.0, entry.EntryPrice)
 	assert.Equal(t, 160.0, entry.ExitPrice)
 	assert.Equal(t, 10.0, entry.Qty)
-	assert.InDelta(t, 100.0, entry.PnL, 0.001)         // (160-150) * 10
-	assert.InDelta(t, 6.666, entry.PnLPct, 0.001)       // (160-150)/150 * 100
+	assert.InDelta(t, 100.0, entry.PnL, 0.001)    // (160-150) * 10
+	assert.InDelta(t, 6.666, entry.PnLPct, 0.001) // (160-150)/150 * 100
 	assert.Equal(t, 2*time.Hour, entry.HoldingPeriod)
 	assert.True(t, entry.IsWinner())
 }

@@ -14,20 +14,20 @@ import (
 
 // Entry represents a single closed paper trade logged in the journal.
 type Entry struct {
-	ID              string                      `json:"id"`
-	Symbol          string                      `json:"symbol"`
-	EntrySignal     bullarc.Signal              `json:"entry_signal"`
-	ExitSignal      bullarc.Signal              `json:"exit_signal"`
-	EntryPrice      float64                     `json:"entry_price"`
-	ExitPrice       float64                     `json:"exit_price"`
-	Qty             float64                     `json:"qty"`
-	PnL             float64                     `json:"pnl"`
-	PnLPct          float64                     `json:"pnl_pct"`
-	HoldingPeriod   time.Duration               `json:"holding_period_ns"`
+	ID              string                              `json:"id"`
+	Symbol          string                              `json:"symbol"`
+	EntrySignal     bullarc.Signal                      `json:"entry_signal"`
+	ExitSignal      bullarc.Signal                      `json:"exit_signal"`
+	EntryPrice      float64                             `json:"entry_price"`
+	ExitPrice       float64                             `json:"exit_price"`
+	Qty             float64                             `json:"qty"`
+	PnL             float64                             `json:"pnl"`
+	PnLPct          float64                             `json:"pnl_pct"`
+	HoldingPeriod   time.Duration                       `json:"holding_period_ns"`
 	EntryIndicators map[string][]bullarc.IndicatorValue `json:"entry_indicators,omitempty"`
 	ExitIndicators  map[string][]bullarc.IndicatorValue `json:"exit_indicators,omitempty"`
-	EntryTime       time.Time                   `json:"entry_time"`
-	ExitTime        time.Time                   `json:"exit_time"`
+	EntryTime       time.Time                           `json:"entry_time"`
+	ExitTime        time.Time                           `json:"exit_time"`
 }
 
 // IsWinner reports whether the trade produced a positive P&L.
@@ -235,17 +235,17 @@ func buildReviewPrompt(entries []Entry) string {
 
 	// Build a JSON summary of the trades for the LLM.
 	type tradeSummary struct {
-		Symbol        string  `json:"symbol"`
-		Direction     string  `json:"direction"`
-		Confidence    float64 `json:"confidence"`
-		Indicator     string  `json:"indicator"`
-		EntryPrice    float64 `json:"entry_price"`
-		ExitPrice     float64 `json:"exit_price"`
-		PnLPct        float64 `json:"pnl_pct"`
-		HoldingHours  float64 `json:"holding_hours"`
-		Winner        bool    `json:"winner"`
-		ExitReason    string  `json:"exit_reason"`
-		RiskFlags     []string `json:"risk_flags,omitempty"`
+		Symbol       string   `json:"symbol"`
+		Direction    string   `json:"direction"`
+		Confidence   float64  `json:"confidence"`
+		Indicator    string   `json:"indicator"`
+		EntryPrice   float64  `json:"entry_price"`
+		ExitPrice    float64  `json:"exit_price"`
+		PnLPct       float64  `json:"pnl_pct"`
+		HoldingHours float64  `json:"holding_hours"`
+		Winner       bool     `json:"winner"`
+		ExitReason   string   `json:"exit_reason"`
+		RiskFlags    []string `json:"risk_flags,omitempty"`
 	}
 
 	summaries := make([]tradeSummary, 0, len(entries))

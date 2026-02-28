@@ -20,7 +20,7 @@ type NewsSentimentSummary struct {
 	Symbol    string               `json:"symbol"`
 	Headlines []ScoredNewsHeadline `json:"headlines"`
 	// AggregateSentiment is the dominant sentiment: "bullish", "neutral", or "bearish".
-	AggregateSentiment string  `json:"aggregate_sentiment"`
+	AggregateSentiment string `json:"aggregate_sentiment"`
 	// AggregateScore is the weighted-average confidence score (0-100) for the aggregate direction.
 	AggregateScore float64 `json:"aggregate_score"`
 }

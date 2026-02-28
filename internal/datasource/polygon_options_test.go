@@ -338,7 +338,7 @@ func TestPolygonOptionsSource_PCRatioAnomaly_FlagsExtraPutContracts(t *testing.T
 	// Put volume (1000) >> call volume (100) → PC ratio = 10.0
 	// Historical average ≈ 1.0 with low std dev → clearly anomalous
 	contracts := []polygonOptionsContract{
-		makeContract("put", 140.0, "2024-06-21", 1000, 900, 1.0, 0.9), // volume >= OI → should be included
+		makeContract("put", 140.0, "2024-06-21", 1000, 900, 1.0, 0.9),  // volume >= OI → should be included
 		makeContract("call", 150.0, "2024-06-21", 100, 2000, 1.0, 0.9), // call side: not flagged
 	}
 	srv := polygonOptionsServer(t, contracts)
