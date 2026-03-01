@@ -113,6 +113,17 @@ func (e *Engine) HasDataSource() bool {
 	return len(e.dataSources) > 0
 }
 
+// DataSourceName returns the Meta().Name of the primary (first) data source,
+// or "none" if no data source is registered.
+func (e *Engine) DataSourceName() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if len(e.dataSources) == 0 {
+		return "none"
+	}
+	return e.dataSources[0].Meta().Name
+}
+
 // HasLLMProvider reports whether an LLM provider is registered.
 func (e *Engine) HasLLMProvider() bool {
 	e.mu.RLock()

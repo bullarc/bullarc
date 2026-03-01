@@ -20,6 +20,7 @@ type Credentials struct {
 	LLMAPIKey       string   `json:"llm_api_key,omitempty"`
 	AlpacaKeyID     string   `json:"alpaca_key_id,omitempty"`
 	AlpacaSecretKey string   `json:"alpaca_secret_key,omitempty"`
+	MassiveAPIKey   string   `json:"massive_api_key,omitempty"`
 	Watchlist       []string `json:"watchlist,omitempty"`
 }
 

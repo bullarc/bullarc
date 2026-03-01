@@ -26,6 +26,8 @@ var mcpConfig string
 
 func init() {
 	mcpCmd.Flags().StringVarP(&mcpConfig, "config", "c", "", "path to config file")
+	mcpCmd.AddCommand(installCmd)
+	mcpCmd.AddCommand(uninstallCmd)
 }
 
 func runMCP(cmd *cobra.Command, _ []string) error {
@@ -37,6 +39,12 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	srv := mcp.New("bullarc", "0.1.0")
 	mcp.RegisterTools(srv, e)
 
-	slog.Info("mcp: server started", "transport", "stdio", "tools", 4)
+	slog.Info("mcp: server started",
+		"transport", "stdio",
+		"tools", srv.ToolCount(),
+		"data_source", e.DataSourceName(),
+		"llm", e.HasLLMProvider(),
+		"indicators", len(e.ListIndicators()),
+	)
 	return srv.Serve(cmd.Context())
 }

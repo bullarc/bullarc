@@ -104,6 +104,8 @@ func errNoDataSource() error {
 		"Set Alpaca API credentials via environment variables:\n" +
 		"  ALPACA_API_KEY=<key-id>\n" +
 		"  ALPACA_SECRET_KEY=<secret>\n\n" +
+		"Or set a Massive API key:\n" +
+		"  MASSIVE_API_KEY=<key>\n\n" +
 		"Or pass them as flags:\n" +
 		"  --alpaca-key <key-id> --alpaca-secret <secret>\n\n" +
 		"Alternatively, use a local CSV file with --csv <path>")
@@ -112,13 +114,15 @@ func errNoDataSource() error {
 // buildEngine constructs an Engine from an optional config file, optional CSV data source,
 // and optional API key overrides. Key resolution order:
 //   - Alpaca: alpacaKeyID flag > ALPACA_API_KEY env var > keystore > config file (when Enabled)
+//   - Massive: MASSIVE_API_KEY env var > keystore > config file (when Enabled)
 //   - LLM: llmKey flag > ANTHROPIC_API_KEY env var > keystore > config file
 func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) (*engine.Engine, error) {
 	var (
-		e         *engine.Engine
-		llmModel  string
-		cfgLLMKey string
-		cfgAlpaca config.AlpacaDataSourceConfig
+		e               *engine.Engine
+		llmModel        string
+		cfgLLMKey       string
+		cfgAlpaca       config.AlpacaDataSourceConfig
+		massiveFromConf bool
 	)
 
 	if cfgPath != "" {
@@ -131,6 +135,7 @@ func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) 
 		llmModel = cfg.LLM.Model
 		cfgAlpaca = cfg.DataSources.Alpaca
 		if cfg.DataSources.Massive.Enabled {
+			massiveFromConf = true
 			var opts []datasource.MassiveOption
 			if cfg.DataSources.Massive.BaseURL != "" {
 				opts = append(opts, datasource.WithMassiveBaseURL(cfg.DataSources.Massive.BaseURL))
@@ -187,6 +192,17 @@ func buildEngine(cfgPath, csvPath, llmKey, alpacaKeyID, alpacaSecretKey string) 
 			opts = append(opts, datasource.WithBaseURL(alpacaBaseURL))
 		}
 		e.RegisterDataSource(datasource.NewAlpacaSource(effectiveAlpacaKeyID, effectiveAlpacaSecretKey, opts...))
+	}
+
+	// Resolve Massive credentials: env var > keystore > config file (when Enabled).
+	if !massiveFromConf {
+		effectiveMassiveKey := os.Getenv("MASSIVE_API_KEY")
+		if effectiveMassiveKey == "" && keystoreCreds.MassiveAPIKey != "" {
+			effectiveMassiveKey = keystoreCreds.MassiveAPIKey
+		}
+		if effectiveMassiveKey != "" {
+			e.RegisterDataSource(datasource.NewMassiveSource(effectiveMassiveKey))
+		}
 	}
 
 	// Resolve LLM key: flag > ANTHROPIC_API_KEY env var > keystore > config file.

@@ -16,7 +16,8 @@ restricted file permissions (0600) so they are available in every
 subsequent session without re-entry.
 
 Stored keys are lower priority than environment variables. Setting
-ANTHROPIC_API_KEY or ALPACA_API_KEY always overrides the stored value.`,
+ANTHROPIC_API_KEY, ALPACA_API_KEY, or MASSIVE_API_KEY always overrides
+the stored value.`,
 	RunE: runConfigure,
 }
 
@@ -24,6 +25,7 @@ var (
 	configureLLMKey       string
 	configureAlpacaKey    string
 	configureAlpacaSecret string
+	configureMassiveKey   string
 	configureWatchlist    string
 )
 
@@ -31,12 +33,13 @@ func init() {
 	configureCmd.Flags().StringVar(&configureLLMKey, "llm-key", "", "Anthropic API key to store persistently")
 	configureCmd.Flags().StringVar(&configureAlpacaKey, "alpaca-key", "", "Alpaca API key ID to store persistently")
 	configureCmd.Flags().StringVar(&configureAlpacaSecret, "alpaca-secret", "", "Alpaca secret key to store persistently")
+	configureCmd.Flags().StringVar(&configureMassiveKey, "massive-key", "", "Massive API key to store persistently")
 	configureCmd.Flags().StringVar(&configureWatchlist, "watchlist", "", "comma-separated default symbol watchlist (e.g. AAPL,MSFT,BTC/USD)")
 }
 
 func runConfigure(_ *cobra.Command, _ []string) error {
-	if configureLLMKey == "" && configureAlpacaKey == "" && configureAlpacaSecret == "" && configureWatchlist == "" {
-		return fmt.Errorf("provide at least one of --llm-key, --alpaca-key, --alpaca-secret, or --watchlist")
+	if configureLLMKey == "" && configureAlpacaKey == "" && configureAlpacaSecret == "" && configureMassiveKey == "" && configureWatchlist == "" {
+		return fmt.Errorf("provide at least one of --llm-key, --alpaca-key, --alpaca-secret, --massive-key, or --watchlist")
 	}
 
 	ksPath, err := config.DefaultKeystorePath()
@@ -57,6 +60,9 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 	}
 	if configureAlpacaSecret != "" {
 		creds.AlpacaSecretKey = configureAlpacaSecret
+	}
+	if configureMassiveKey != "" {
+		creds.MassiveAPIKey = configureMassiveKey
 	}
 	if configureWatchlist != "" {
 		creds.Watchlist = parseWatchlist(configureWatchlist)

@@ -73,6 +73,11 @@ func (s *Server) AddTool(t Tool) {
 	s.tools[t.Name] = t
 }
 
+// ToolCount returns the number of registered tools.
+func (s *Server) ToolCount() int {
+	return len(s.tools)
+}
+
 // Serve reads JSON-RPC messages from stdin and dispatches them until ctx is cancelled
 // or stdin is closed. It uses a 4 MiB scanner buffer to support large messages.
 func (s *Server) Serve(ctx context.Context) error {
