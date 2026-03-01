@@ -212,26 +212,41 @@ See [sdk.md](sdk.md) for the full API reference.
 ### MCP Server (`internal/mcp/`)
 
 The MCP (Model Context Protocol) server exposes bullarc tools over stdio to
-any MCP-compatible client (Claude Desktop, Cursor, etc.).
+any MCP-compatible client (Claude Code, Claude Desktop, Cursor, etc.).
 
 Available MCP tools:
 
-| Tool | Description |
-|------|-------------|
-| `get_signals` | Analyse one or more symbols and return composite signals |
-| `explain_signal` | Generate a plain-English explanation using LLM |
-| `stream_signals` | Push-based signal delivery within a timeout window |
-| `backtest_strategy` | Run a backtest from a CSV file and return statistics |
-| `explain_backtest` | Run a backtest and return an AI-generated explanation |
-| `list_indicators` | List all registered indicators with metadata |
+| Tool | Description | Requires LLM |
+|------|-------------|:---:|
+| `get_signals` | Analyse one or more symbols and return composite signals | |
+| `compare_symbols` | Ranked comparison across multiple symbols | |
+| `list_indicators` | List all registered indicators with metadata | |
+| `backtest_strategy` | Run a backtest from a CSV file and return statistics | |
+| `stream_signals` | Push-based signal delivery within a timeout window | |
+| `get_risk_metrics` | ATR-based position sizing and stop-loss levels | |
+| `explain_signal` | Generate a plain-English explanation using LLM | yes |
+| `analyze_with_ai` | Multi-step LLM reasoning and trading thesis | yes |
+| `explain_backtest` | Run a backtest and return an AI-generated explanation | yes |
+| `get_news_sentiment` | Fetch and score news sentiment | yes |
 
-Start the MCP server:
+One-command setup for Claude Code:
+
+```bash
+MASSIVE_API_KEY=xxx bullarc mcp install
+```
+
+Or start manually:
 
 ```bash
 bullarc mcp
-# or with a config file:
 bullarc mcp -c config.yaml
 ```
+
+The `mcp install` command writes to `~/.claude.json` (global scope) and
+auto-detects `MASSIVE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, and
+`ANTHROPIC_API_KEY` from the environment. When used through Claude Code, the
+6 non-LLM tools are fully functional without `ANTHROPIC_API_KEY` since Claude
+itself interprets the raw signals.
 
 ---
 

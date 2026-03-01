@@ -53,7 +53,7 @@ bullarc journal review
 **MCP server** — let Claude be your analyst in Claude Desktop or Cursor
 
 ```bash
-bullarc mcp
+MASSIVE_API_KEY=xxx bullarc mcp install   # one-command Claude Code setup
 ```
 
 ## Features
@@ -85,10 +85,15 @@ bullarc mcp
 
 ```bash
 # Store credentials once (optional — works without any keys via CSV mode)
+bullarc configure --massive-key $MASSIVE_API_KEY
+bullarc configure --alpaca-key $ALPACA_API_KEY --alpaca-secret $ALPACA_SECRET_KEY
 bullarc configure --llm-key $ANTHROPIC_API_KEY
 
-# With live market data
-bullarc configure --llm-key $ANTHROPIC_API_KEY --watchlist AAPL,MSFT,TSLA,BTC/USD
+# Or just set env vars — bullarc auto-detects them
+export MASSIVE_API_KEY=xxx        # Massive market data
+export ALPACA_API_KEY=xxx         # Alpaca market data (alternative)
+export ALPACA_SECRET_KEY=xxx
+export ANTHROPIC_API_KEY=xxx      # LLM explanations (optional)
 ```
 
 Or use a config file:
@@ -123,14 +128,24 @@ Credential resolution order: flags > env vars > keystore (`~/.config/bullarc/cre
 | `bullarc journal query` | Filter trades by symbol, date, winners/losers |
 | `bullarc journal review` | AI-powered trade pattern review |
 | `bullarc mcp` | Start MCP server for Claude Desktop / Cursor |
+| `bullarc mcp install` | One-command MCP setup for Claude Code |
+| `bullarc mcp uninstall` | Remove MCP server from Claude Code |
 | `bullarc configure` | Store credentials and watchlist |
 | `bullarc version` | Print version |
 
 ## MCP Server
 
 ```bash
+# One-command setup for Claude Code (auto-detects env vars)
+MASSIVE_API_KEY=xxx bullarc mcp install
+
+# Or start manually
 bullarc mcp
 ```
+
+The install command registers bullarc globally in Claude Code — no config files
+needed. It detects `MASSIVE_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, and
+`ANTHROPIC_API_KEY` from your environment and forwards them to the MCP server.
 
 Exposes 10 tools over JSON-RPC 2.0 stdio:
 
@@ -206,8 +221,7 @@ make demo-gif    # Generate demo.gif (requires VHS)
 
 ```bash
 docker run --rm \
-  -e ALPACA_API_KEY=<key-id> \
-  -e ALPACA_SECRET_KEY=<secret> \
+  -e MASSIVE_API_KEY=<key> \
   -e ANTHROPIC_API_KEY=<key> \
   ghcr.io/bullarc/bullarc:latest analyze --symbol AAPL --llm
 ```

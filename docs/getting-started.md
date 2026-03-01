@@ -7,8 +7,10 @@ This guide takes you from zero to a working watchlist in under five minutes.
 ## Prerequisites
 
 - Go 1.22 or later (`go version` to check)
-- An [Alpaca Markets](https://app.alpaca.markets) account with API credentials
-  (free paper-trading account is sufficient)
+- A market data API key — either:
+  - A [Massive Finance](https://massive.com) API key, or
+  - An [Alpaca Markets](https://app.alpaca.markets) account with API credentials
+    (free paper-trading account is sufficient)
 - Optional: An [Anthropic](https://console.anthropic.com) API key for
   plain-English signal explanations
 
@@ -44,6 +46,10 @@ The quickest way to make credentials available to every future command is to
 save them to the keystore:
 
 ```bash
+# Option A: Massive (single key)
+bullarc configure --massive-key <your-massive-key>
+
+# Option B: Alpaca (key + secret)
 bullarc configure \
   --alpaca-key   PKXXXXXXXXXXXXXXXX \
   --alpaca-secret <your-alpaca-secret>
@@ -60,6 +66,10 @@ ls -l ~/.config/bullarc/credentials
 Alternatively, export environment variables in your shell profile:
 
 ```bash
+# Option A: Massive
+export MASSIVE_API_KEY=<your-massive-key>
+
+# Option B: Alpaca
 export ALPACA_API_KEY=PKXXXXXXXXXXXXXXXX
 export ALPACA_SECRET_KEY=<your-alpaca-secret>
 ```
@@ -162,6 +172,22 @@ The CSV must have a header row followed by columns in this order:
 
 ---
 
+## Step 8 — Set up MCP for Claude Code (optional)
+
+If you use Claude Code, one command registers bullarc as a global MCP server:
+
+```bash
+MASSIVE_API_KEY=xxx bullarc mcp install
+```
+
+This writes to `~/.claude.json` and makes 10 analysis tools available in every
+Claude Code session. No config files needed. Restart Claude Code or run `/mcp`
+to connect.
+
+To remove it later: `bullarc mcp uninstall`.
+
+---
+
 ## Next steps
 
 - Read [configuration.md](configuration.md) to understand every option and the
@@ -176,17 +202,21 @@ The CSV must have a header row followed by columns in this order:
 
 ### "no data source configured"
 
-You have not provided Alpaca credentials. Either:
+You have not provided market data credentials. Either:
 
 ```bash
-# Option A: environment variables
+# Option A: Massive API key
+export MASSIVE_API_KEY=...
+
+# Option B: Alpaca credentials
 export ALPACA_API_KEY=...
 export ALPACA_SECRET_KEY=...
 
-# Option B: keystore (persists across sessions)
+# Option C: keystore (persists across sessions)
+bullarc configure --massive-key ...
 bullarc configure --alpaca-key ... --alpaca-secret ...
 
-# Option C: local CSV (no live data needed)
+# Option D: local CSV (no live data needed)
 bullarc analyze --symbol MYSTOCK --csv /path/to/data.csv
 ```
 

@@ -60,6 +60,19 @@ Additional per-command flags override individual config-file values.
 |------|-------------|
 | `-c, --config` | Path to a YAML config file |
 
+#### `bullarc mcp install`
+
+Registers bullarc as a global MCP server in Claude Code (`~/.claude.json`).
+Detects API keys from the current environment and forwards them.
+
+```bash
+MASSIVE_API_KEY=xxx bullarc mcp install
+```
+
+#### `bullarc mcp uninstall`
+
+Removes the bullarc MCP server entry from Claude Code.
+
 ### `bullarc configure`
 
 Persists credentials to `~/.config/bullarc/credentials` (mode `0600`).
@@ -69,6 +82,7 @@ Persists credentials to `~/.config/bullarc/credentials` (mode `0600`).
 | `--llm-key` | Anthropic API key to store persistently |
 | `--alpaca-key` | Alpaca API key ID to store persistently |
 | `--alpaca-secret` | Alpaca secret key to store persistently |
+| `--massive-key` | Massive API key to store persistently |
 | `--watchlist` | Default symbol list (e.g. `AAPL,MSFT,BTC/USD`) |
 
 ---
@@ -77,9 +91,10 @@ Persists credentials to `~/.config/bullarc/credentials` (mode `0600`).
 
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key for LLM explanations |
+| `MASSIVE_API_KEY` | Massive Finance API key for live market data |
 | `ALPACA_API_KEY` | Alpaca Markets API key ID for live data |
 | `ALPACA_SECRET_KEY` | Alpaca Markets secret key for live data |
+| `ANTHROPIC_API_KEY` | Anthropic API key for LLM explanations |
 
 Environment variables override the keystore and config file for the same
 credential. Setting them is the recommended approach in CI/CD and containerised
@@ -93,6 +108,9 @@ The keystore stores credentials at `~/.config/bullarc/credentials` with mode
 `0600` (readable only by the current user). Use `bullarc configure` to set values:
 
 ```bash
+# Store Massive API key
+bullarc configure --massive-key <your-massive-key>
+
 # Store Alpaca credentials
 bullarc configure --alpaca-key PKXXXXXXXXXXXXXXXX --alpaca-secret <secret>
 
@@ -104,6 +122,7 @@ bullarc configure --watchlist AAPL,MSFT,GOOGL
 
 # All at once
 bullarc configure \
+  --massive-key <your-massive-key> \
   --alpaca-key PKXXXXXXXXXXXXXXXX \
   --alpaca-secret <secret> \
   --llm-key sk-ant-... \
@@ -202,6 +221,11 @@ Credential: Alpaca secret key
   3. bullarc configure --alpaca-secret (keystore)
   4. data_sources.alpaca.secret_key in config file (only when enabled: true)
 
+Credential: Massive API key
+  1. MASSIVE_API_KEY environment variable
+  2. bullarc configure --massive-key (keystore)
+  3. data_sources.massive.api_key in config file (only when enabled: true)
+
 Credential: Anthropic API key
   1. --llm-key flag
   2. ANTHROPIC_API_KEY environment variable
@@ -219,6 +243,10 @@ Default watchlist
 ## Minimal working setup (environment variables only)
 
 ```bash
+# Option A: Massive
+export MASSIVE_API_KEY=<your-massive-key>
+
+# Option B: Alpaca
 export ALPACA_API_KEY=PKXXXXXXXXXXXXXXXX
 export ALPACA_SECRET_KEY=<secret>
 
